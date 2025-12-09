@@ -5283,7 +5283,7 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeWaypoint(StationID id)
 	item.top = st->sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
-	_viewport_sign_maxwidth = std::max<int>({_viewport_sign_maxwidth, st->sign.width_normal, st->sign.width_small});
+	_viewport_sign_maxwidth = std::max<int>({ _viewport_sign_maxwidth, st->sign.width_normal, st->sign.width_small });
 
 	return item;
 }
@@ -5300,7 +5300,7 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeTown(TownID id)
 	item.top = town->cache.sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
-	_viewport_sign_maxwidth = std::max<int>({_viewport_sign_maxwidth, town->cache.sign.width_normal, town->cache.sign.width_small});
+	_viewport_sign_maxwidth = std::max<int>({ _viewport_sign_maxwidth, town->cache.sign.width_normal, town->cache.sign.width_small });
 
 	return item;
 }
@@ -5317,7 +5317,7 @@ ViewportSignKdtreeItem ViewportSignKdtreeItem::MakeSign(SignID id)
 	item.top = sign->sign.top;
 
 	/* Assume the sign can be a candidate for drawing, so measure its width */
-	_viewport_sign_maxwidth = std::max<int>({_viewport_sign_maxwidth, sign->sign.width_normal, sign->sign.width_small});
+	_viewport_sign_maxwidth = std::max<int>({ _viewport_sign_maxwidth, sign->sign.width_normal, sign->sign.width_small });
 
 	return item;
 }
@@ -5329,7 +5329,7 @@ void RebuildViewportKdtree()
 
 	if (IsHeadless()) {
 		_viewport_sign_kdtree_valid = false;
-		_viewport_sign_kdtree.Build<ViewportSignKdtreeItem*>(nullptr, nullptr);
+		_viewport_sign_kdtree.Build<ViewportSignKdtreeItem *>(nullptr, nullptr);
 		return;
 	}
 
@@ -5380,6 +5380,9 @@ static void PlaceObject()
 	if ((_thd.place_mode & HT_DRAG_MASK) == HT_POINT) {
 		pt.x += TILE_SIZE / 2;
 		pt.y += TILE_SIZE / 2;
+	} else if ((_thd.place_mode & HT_DRAG_MASK) == HT_RECT) {
+		pt.x -= (_thd.new_size.x - TILE_SIZE) / 2;
+		pt.y -= (_thd.new_size.y - TILE_SIZE) / 2;
 	}
 
 	_tile_fract_coords.x = pt.x & TILE_UNIT_MASK;
@@ -5687,6 +5690,8 @@ void UpdateTileSelection()
 			switch (_thd.place_mode & HT_DRAG_MASK) {
 				case HT_RECT:
 					new_drawstyle = HT_RECT;
+					x1 -= (_thd.new_size.x - TILE_SIZE) / 2;
+					y1 -= (_thd.new_size.y - TILE_SIZE) / 2;
 					break;
 				case HT_POINT:
 					new_drawstyle = HT_POINT;
