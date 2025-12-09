@@ -325,6 +325,13 @@ if(MSVC)
      endif()
 endif()
 
+target_precompile_headers(openttd_lib
+    PRIVATE
+    src/stdafx.h
+    src/core/format.hpp
+)
+set_source_files_properties(src/3rdparty/fmt/format.cc PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
 add_subdirectory(${CMAKE_SOURCE_DIR}/bin)
 add_subdirectory(${CMAKE_SOURCE_DIR}/src)
 add_subdirectory(${CMAKE_SOURCE_DIR}/media)
