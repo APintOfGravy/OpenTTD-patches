@@ -836,6 +836,7 @@ struct EconomySettings {
 	bool     disable_inflation_newgrf_flag;  ///< Disable NewGRF inflation flag
 	CargoPaymentAlgorithm payment_algorithm; ///< Cargo payment algorithm
 	uint8_t industry_event_rate;             ///< Rate of industry events
+	uint8_t cargo_decay_scale;               ///< scale cargo delivery payment decay by this percentage.
 };
 
 struct OldEconomySettings {

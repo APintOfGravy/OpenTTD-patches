@@ -1013,6 +1013,7 @@ SettingsContainer &GetSettingsTree()
 			accounting->Add(new SettingEntry("difficulty.vehicle_costs_when_stopped"));
 			accounting->Add(new SettingEntry("difficulty.construction_cost"));
 			accounting->Add(new SettingEntry("economy.payment_algorithm"));
+			accounting->Add(new SettingEntry("economy.cargo_decay_scale"));
 		}
 
 		SettingsPage *vehicles = main->Add(new SettingsPage(STR_CONFIG_SETTING_VEHICLES));
