@@ -1143,7 +1143,12 @@ void Vehicle::PreDestructor()
 {
 	if (CleaningPool()) return;
 
-	SCOPE_INFO_FMT([this], "Vehicle::PreDestructor: {}", VehicleInfoDumper(this));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[this](struct format_target &buffer) {
+			buffer.format("Vehicle::PreDestructor: {}",
+						VehicleInfoDumper(this));
+		}
+	);
 
 	if (Station::IsValidID(this->last_station_visited)) {
 		Station *st = Station::Get(this->last_station_visited);
@@ -1314,7 +1319,13 @@ static void RunVehicleDayProc()
 
 	/* Run the day_proc for every DAY_TICKS vehicle starting at _date_fract. */
 	Vehicle *v = nullptr;
-	SCOPE_INFO_FMT([&v], "RunVehicleDayProc: {}", VehicleInfoDumper(v));
+
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&v](struct format_target &buffer) {
+			buffer.format("RunVehicleDayProc: {}", VehicleInfoDumper(v));
+		}
+	);
+
 	for (size_t i = EconTime::CurDateFract(); i < Vehicle::GetPoolSize(); i += DAY_TICKS) {
 		v = Vehicle::Get(i);
 		if (v == nullptr) continue;
@@ -1365,7 +1376,13 @@ static void RunVehicleCalendarDayProc()
 	if (_game_mode != GM_NORMAL) return;
 
 	Vehicle *v = nullptr;
-	SCOPE_INFO_FMT([&v], "RunVehicleCalendarDayProc: {}", VehicleInfoDumper(v));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&v](struct format_target &buffer) {
+			buffer.format("RunVehicleCalendarDayProc: {}",
+						VehicleInfoDumper(v));
+		}
+	);
+
 	for (size_t i = CalTime::CurDateFract(); i < Vehicle::GetPoolSize(); i += DAY_TICKS) {
 		v = Vehicle::Get(i);
 		if (v == nullptr) continue;
@@ -1572,7 +1589,13 @@ void CallVehicleTicks()
 		 */
 
 		Vehicle *v = nullptr;
-		SCOPE_INFO_FMT([&v], "CallVehicleTicks -> OnPeriodic: {}", VehicleInfoDumper(v));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[&v](struct format_target &buffer) {
+				buffer.format("CallVehicleTicks -> OnPeriodic: {}",
+							VehicleInfoDumper(v));
+			}
+		);
+
 		for (VehicleID::BaseType i = (VehicleID::BaseType)(_scaled_tick_counter & 0x1FF); i < Vehicle::GetPoolSize(); i += 0x200) {
 			v = Vehicle::Get(static_cast<VehicleID>(i));
 			if (v == nullptr) continue;
@@ -1602,7 +1625,13 @@ void CallVehicleTicks()
 	{
 		PerformanceMeasurer framerate(PFE_GL_ECONOMY);
 		Station *si_st = nullptr;
-		SCOPE_INFO_FMT([&si_st], "CallVehicleTicks: LoadUnloadStation: {}", StationInfoDumper(si_st));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[&si_st](struct format_target &buffer) {
+				buffer.format("CallVehicleTicks: LoadUnloadStation: {}",
+							StationInfoDumper(si_st));
+			}
+		);
+
 		for (Station *st : Station::Iterate()) {
 			si_st = st;
 			LoadUnloadStation(st);
@@ -1621,7 +1650,12 @@ void CallVehicleTicks()
 	}
 
 	Vehicle *v = nullptr;
-	SCOPE_INFO_FMT([&v], "CallVehicleTicks: {}", VehicleInfoDumper(v));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&v](struct format_target &buffer) {
+			buffer.format("CallVehicleTicks: {}", VehicleInfoDumper(v));
+		}
+	);
+
 	{
 		for (VehicleID id : _remove_from_tick_effect_veh_cache) {
 			_tick_effect_veh_cache.erase(id);
@@ -1698,7 +1732,13 @@ void CallVehicleTicks()
 	Backup<CompanyID> sell_cur_company(_current_company, FILE_LINE);
 	for (VehicleID index : _vehicles_to_sell) {
 		Vehicle *v = Vehicle::Get(index);
-		SCOPE_INFO_FMT([v], "CallVehicleTicks: sell: {}", VehicleInfoDumper(v));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[v](struct format_target &buffer) {
+				buffer.format("CallVehicleTicks: sell: {}",
+							VehicleInfoDumper(v));
+			}
+		);
+
 		const bool is_train = (v->type == VEH_TRAIN);
 
 		sell_cur_company.Change(v->owner);
@@ -1728,7 +1768,12 @@ void CallVehicleTicks()
 	for (VehicleID index : _vehicles_to_templatereplace) {
 		Train *t = Train::Get(index);
 
-		SCOPE_INFO_FMT([t], "CallVehicleTicks: template replace: {}", VehicleInfoDumper(t));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[t](struct format_target &buffer) {
+				buffer.format("CallVehicleTicks: template replace: {}",
+							VehicleInfoDumper(t));
+			}
+		);
 
 		auto it = _vehicles_to_autoreplace.find(index);
 		assert(it != _vehicles_to_autoreplace.end());
@@ -1810,7 +1855,12 @@ void CallVehicleTicks()
 	Backup<CompanyID> repair_cur_company(_current_company, FILE_LINE);
 	for (VehicleID index : _vehicles_to_pay_repair) {
 		Vehicle *v = Vehicle::Get(index);
-		SCOPE_INFO_FMT([v], "CallVehicleTicks: repair: {}", VehicleInfoDumper(v));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[v](struct format_target &buffer) {
+				buffer.format("CallVehicleTicks: repair: {}",
+							VehicleInfoDumper(v));
+			}
+		);
 
 		ExpensesType type = INVALID_EXPENSES;
 		_current_company = v->owner;

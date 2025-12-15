@@ -1607,7 +1607,12 @@ static bool CheckRestartLoadingAtRoadStop(RoadVehicle *v)
 
 bool IndividualRoadVehicleController(RoadVehicle *v, const RoadVehicle *prev)
 {
-	SCOPE_INFO_FMT([&], "IndividualRoadVehicleController: {}, {}", VehicleInfoDumper(v), VehicleInfoDumper(prev));
+	FunctorScopeStackRecord _sc_lm___LINE__([&](struct format_target &buffer) {
+		buffer.format("IndividualRoadVehicleController: {}, {}",
+					VehicleInfoDumper(v), VehicleInfoDumper(prev));
+		}
+	);
+
 	if (v->overtaking & RVSB_DRIVE_SIDE && v->IsFrontEngine())  {
 		if (IsNonOvertakingStationTile(v->tile, DirToDiagDir(v->direction))) {
 			/* Force us to be not overtaking! */

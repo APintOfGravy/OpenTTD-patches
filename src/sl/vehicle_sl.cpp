@@ -287,7 +287,13 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 	_load_invalid_vehicles_to_delete.clear();
 
 	const Vehicle *si_v = nullptr;
-	SCOPE_INFO_FMT([&si_v], "AfterLoadVehiclesPhase1: {}", VehicleInfoDumper(si_v));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&si_v](struct format_target &buffer) {
+			buffer.format("AfterLoadVehiclesPhase1: {}",
+						VehicleInfoDumper(si_v));
+		}
+	);
+
 	for (Vehicle *v : Vehicle::Iterate()) {
 		si_v = v;
 		/* Reinstate the previous pointer */
@@ -468,7 +474,14 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 void AfterLoadVehiclesPhase2(bool part_of_load)
 {
 	const Vehicle *si_v = nullptr;
-	SCOPE_INFO_FMT([&si_v], "AfterLoadVehiclesPhase2: {}", VehicleInfoDumper(si_v));
+
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&si_v](struct format_target &buffer) {
+			buffer.format("AfterLoadVehiclesPhase2: {}",
+						VehicleInfoDumper(si_v));
+		}
+	);
+
 	for (Vehicle *v : Vehicle::IterateFrontOnly()) {
 		si_v = v;
 		assert(v->First() != nullptr);

@@ -312,7 +312,14 @@ void HandleSharingCompanyDeletion(Owner owner)
 	YapfNotifyTrackLayoutChange(INVALID_TILE, INVALID_TRACK);
 
 	Vehicle *si_v = nullptr;
-	SCOPE_INFO_FMT([&si_v], "HandleSharingCompanyDeletion: veh: {}", VehicleInfoDumper(si_v));
+
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&si_v](struct format_target &buffer) {
+			buffer.format("HandleSharingCompanyDeletion: veh: {}",
+						VehicleInfoDumper(si_v));
+		}
+	);
+
 	for (Vehicle *v : Vehicle::IterateFrontOnly()) {
 		si_v = v;
 		if (!IsCompanyBuildableVehicleType(v)) continue;

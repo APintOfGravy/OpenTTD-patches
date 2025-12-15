@@ -111,7 +111,11 @@ void CheckCaches(bool force_check, std::function<void(std::string_view)> log, Ch
 		if (desync_level == 1 && _state_ticks.base() % 500 != 0) return;
 	}
 
-	SCOPE_INFO_FMT([flags], "CheckCaches: {:X}", flags);
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[flags](struct format_target &buffer) {
+			buffer.format("CheckCaches: {:X}", flags);
+		}
+	);
 
 	std::vector<std::string> saved_messages;
 	std::function<void(std::string_view)> log_orig;

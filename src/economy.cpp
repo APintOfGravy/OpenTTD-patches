@@ -1963,7 +1963,13 @@ static void LoadUnloadVehicle(Vehicle *front)
 	if (front->type == VEH_TRAIN) station_vehicle = Train::From(front)->GetStationLoadingVehicle();
 	TileIndex station_tile = station_vehicle->tile;
 
-	SCOPE_INFO_FMT([&], "LoadUnloadVehicle: {}, {}, {}, 0x{:X}", StationInfoDumper(st), VehicleInfoDumper(front), VehicleInfoDumper(station_vehicle), station_tile);
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("LoadUnloadVehicle: {}, {}, {}, 0x{:X}",
+						StationInfoDumper(st), VehicleInfoDumper(front),
+						VehicleInfoDumper(station_vehicle), station_tile);
+		}
+	);
 
 	bool pull_through_mode = false;
 	bool load_unload_not_yet_in_station = false;

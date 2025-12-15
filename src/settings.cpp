@@ -1490,7 +1490,13 @@ static void TrainBrakingModelChanged(int32_t new_value)
 			}
 		}
 		Train *v_cur = nullptr;
-		SCOPE_INFO_FMT([&v_cur], "TrainBrakingModelChanged: {}", VehicleInfoDumper(v_cur));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[&v_cur](struct format_target &buffer) {
+				buffer.format("TrainBrakingModelChanged: {}",
+							VehicleInfoDumper(v_cur));
+			}
+		);
+
 		extern bool _long_reserve_disabled;
 		_long_reserve_disabled = true;
 		for (Train *v : Train::IterateFrontOnly()) {
@@ -1507,7 +1513,13 @@ static void TrainBrakingModelChanged(int32_t new_value)
 		}
 	} else if (new_value == TBM_ORIGINAL && (_game_mode == GM_NORMAL || _game_mode == GM_EDITOR)) {
 		Train *v_cur = nullptr;
-		SCOPE_INFO_FMT([&v_cur], "TrainBrakingModelChanged: {}", VehicleInfoDumper(v_cur));
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[&v_cur](struct format_target &buffer) {
+				buffer.format("TrainBrakingModelChanged: {}",
+							VehicleInfoDumper(v_cur));
+			}
+		);
+
 		for (Train *v : Train::IterateFrontOnly()) {
 			v_cur = v;
 			if (!v->IsPrimaryVehicle() || v->vehstatus.Test(VehState::Crashed) || HasBit(v->subtype, GVSF_VIRTUAL) || v->track == TRACK_BIT_DEPOT) {
@@ -3314,7 +3326,11 @@ CommandCost CmdChangeSetting(DoCommandFlags flags, const std::string &name, int3
 	if (!sd->IsEditable(true)) return CMD_ERROR;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		SCOPE_INFO_FMT([=], "CmdChangeSetting: {} -> {}", sd->name, value);
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[=](struct format_target &buffer) {
+				buffer.format("CmdChangeSetting: {} -> {}", sd->name, value);
+			}
+		);
 
 		sd->AsIntSetting()->ChangeValue(&GetGameSettings(), value, ConfigSaveFlagsUsingGameSettingsFor(sd));
 	}
@@ -3339,8 +3355,12 @@ CommandCost CmdChangeCompanySetting(DoCommandFlags flags, const std::string &nam
 	if (!sd->IsIntSetting()) return CMD_ERROR;
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		SCOPE_INFO_FMT([=], "CmdChangeCompanySetting: {} -> {}", sd->name, value);
-
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[=](struct format_target &buffer) {
+			buffer.format("CmdChangeCompanySetting: {} -> {}", sd->name,
+							value);
+			}
+		);
 		sd->AsIntSetting()->ChangeValue(&Company::Get(_current_company)->settings, value, STCF_NONE);
 	}
 

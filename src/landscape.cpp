@@ -749,7 +749,12 @@ void RunTileLoop(bool apply_day_length)
 	/* The LFSR cannot have a zeroed state. */
 	dbg_assert(tile != 0);
 
-	SCOPE_INFO_FMT([&], "RunTileLoop: tile: {}x{}", TileX(tile), TileY(tile));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("RunTileLoop: tile: {}x{}", TileX(tile),
+						TileY(tile));
+		}
+	);
 
 	/* Manually update tile 0 every TILE_UPDATE_FREQUENCY ticks - the LFSR never iterates over it itself.  */
 	if (_tick_counter % TILE_UPDATE_FREQUENCY == 0) {

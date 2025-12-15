@@ -1574,7 +1574,11 @@ void LoadNewGRFFile(GRFConfig &config, GrfLoadingStage stage, Subdirectory subdi
 		if (stage == GLS_ACTIVATION && !config.flags.Test(GRFConfigFlag::Reserved)) return;
 	}
 
-	SCOPE_INFO_FMT([&], "LoadNewGRFFile: {}, {}", filename, stage);
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("LoadNewGRFFile: {}, {}", filename, stage);
+		}
+	);
 
 	bool needs_palette_remap = config.palette & GRFP_USE_MASK;
 	if (temporary) {

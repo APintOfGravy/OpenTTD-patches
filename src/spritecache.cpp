@@ -529,7 +529,13 @@ static void *ReadSprite(const SpriteCache *sc, SpriteID id, SpriteType sprite_ty
 	SpriteFile &file = *sc->file;
 	size_t file_pos = sc->file_pos;
 
-	SCOPE_INFO_FMT([&], "ReadSprite: pos: {}, id: {}, file: ({}), type: {}", file_pos, id, file.GetSimplifiedFilename(), GetSpriteTypeName(sprite_type));
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("ReadSprite: pos: {}, id: {}, file: ({}), type: {}",
+						file_pos, id, file.GetSimplifiedFilename(),
+						GetSpriteTypeName(sprite_type));
+		}
+	);
 
 	assert(sprite_type != SpriteType::Recolour);
 	assert(IsMapgenSpriteID(id) == (sprite_type == SpriteType::MapGen));
@@ -693,7 +699,14 @@ bool LoadNextSprite(SpriteID load_index, SpriteFile &file, uint file_sprite_id)
 {
 	size_t file_pos = file.GetPos();
 
-	SCOPE_INFO_FMT([&], "LoadNextSprite: pos: {}, file: {}, load_index: {}, file_sprite_id: {}, container_ver: {}", file_pos, file.GetSimplifiedFilename(), load_index, file_sprite_id, file.GetContainerVersion());
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("LoadNextSprite: pos: {}, file: {}, load_index: "
+						"{}, file_sprite_id: {}, container_ver: {}",
+						file_pos, file.GetSimplifiedFilename(), load_index,
+						file_sprite_id, file.GetContainerVersion());
+		}
+	);
 
 	/* Read sprite header. */
 	uint32_t num = file.GetContainerVersion() >= 2 ? file.ReadDword() : file.ReadWord();

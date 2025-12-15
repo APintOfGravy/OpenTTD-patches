@@ -86,7 +86,13 @@
 	Backup<CompanyID> cur_company(_current_company, FILE_LINE);
 	for (const Company *c : Company::Iterate()) {
 		if (c->is_ai) {
-			SCOPE_INFO_FMT([&], "AI::GameLoop: {}: {} (v{})\n", c->index, c->ai_info->GetName(), c->ai_info->GetVersion());
+			FunctorScopeStackRecord _sc_lm___LINE__(
+				[&](struct format_target &buffer) {
+				buffer.format("AI::GameLoop: {}: {} (v{})\n", c->index,
+								c->ai_info->GetName(),
+								c->ai_info->GetVersion());
+				}
+			);
 			PerformanceMeasurer framerate((PerformanceElement)(PFE_AI0 + c->index));
 			cur_company.Change(c->index);
 			c->ai_instance->GameLoop();
@@ -353,4 +359,3 @@
 {
 	return AI::scanner_library.get();
 }
-

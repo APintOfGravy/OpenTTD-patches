@@ -979,7 +979,15 @@ static void SetViewportPosition(Window *w, int x, int y, bool force_update_overl
 		if (i >= 0) height -= i;
 
 		if (height > 0 && (move_offset.x != 0 || move_offset.y != 0)) {
-			SCOPE_INFO_FMT([&], "DoSetViewportPosition: {}, {}, {}, {}, {}, {}, {}", left, top, width, height, move_offset.x, move_offset.y, WindowInfoDumper(w));
+			FunctorScopeStackRecord _sc_lm___LINE__(
+				[&](struct format_target &buffer) {
+				buffer.format(
+					"DoSetViewportPosition: {}, {}, {}, {}, {}, {}, {}",
+					left, top, width, height, move_offset.x,
+					move_offset.y, WindowInfoDumper(w));
+				}
+			);
+
 			ScrollViewportLandPixelCache(vp, move_offset.x, move_offset.y);
 			ScrollPlanPixelCache(vp, move_offset.x, move_offset.y);
 			if (have_overlay) ScrollOrInvalidateOverlayPixelCache(vp, move_offset.x, move_offset.y);

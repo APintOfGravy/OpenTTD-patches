@@ -5577,7 +5577,14 @@ bool TrainController(Train *v, Vehicle *nomove, bool reverse)
 {
 	Train *first = v->First();
 	Train *prev = nullptr;
-	SCOPE_INFO_FMT([&], "TrainController: {}, {}, {}", VehicleInfoDumper(v), VehicleInfoDumper(prev), VehicleInfoDumper(nomove));
+
+	FunctorScopeStackRecord _sc_lm___LINE__(
+		[&](struct format_target &buffer) {
+			buffer.format("TrainController: {}, {}, {}", VehicleInfoDumper(v),
+						VehicleInfoDumper(prev), VehicleInfoDumper(nomove));
+		}
+	);
+
 	bool direction_changed = false; // has direction of any part changed?
 	bool update_signal_tunbridge_exit = false;
 	Direction old_direction = INVALID_DIR;
@@ -7018,7 +7025,10 @@ Trackdir Train::GetVehicleTrackdir() const
  */
 void DeleteVisibleTrain(Train *v)
 {
-	SCOPE_INFO_FMT([v], "DeleteVisibleTrain: {}", VehicleInfoDumper(v));
+	FunctorScopeStackRecord _sc_lm___LINE__([v](struct format_target &buffer) {
+		buffer.format("DeleteVisibleTrain: {}", VehicleInfoDumper(v));
+		}
+	);
 
 	assert(!v->IsVirtual());
 

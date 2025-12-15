@@ -36,9 +36,14 @@ bool ScriptScanner::AddFile(const std::string &filename, size_t, const std::stri
 
 	if (!FioCheckFileExists(filename, this->subdir) || !FioCheckFileExists(this->main_script, this->subdir)) return false;
 
-	SCOPE_INFO_FMT([&], "ScriptScanner::AddFile: {}, {}", filename, tar_filename);
+		FunctorScopeStackRecord _sc_lm___LINE__(
+			[&](struct format_target &buffer) {
+			buffer.format("ScriptScanner::AddFile: {}, {}", filename,
+							tar_filename);
+			}
+		);
 
-	this->ResetEngine();
+        this->ResetEngine();
 	try {
 		this->engine->LoadScript(filename);
 	} catch (Script_FatalError &e) {
