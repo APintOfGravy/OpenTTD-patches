@@ -117,6 +117,8 @@ struct Aircraft final : public SpecializedVehicle<Aircraft, VEH_AIRCRAFT> {
 	TileIndex GetCargoTile() const override { return this->First()->tile; }
 	ClosestDepot FindClosestDepot() override;
 
+	bool IsUnitPowered() const override { return this->IsNormalAircraft(); }
+
 	/**
 	 * Check if the aircraft type is a normal flying device; eg
 	 * not a rotor or a shadow

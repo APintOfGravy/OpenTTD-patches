@@ -1181,7 +1181,7 @@ static void UpdateConsists(int32_t new_value)
 {
 	for (Train *t : Train::IterateFrontOnly()) {
 		/* Update the consist of all trains so the maximum speed is set correctly. */
-		if (t->IsFrontEngine() || t->IsFreeWagon()) {
+		if (t->IsFrontUnit() || t->IsFreeWagon()) {
 			t->ConsistChanged(CCF_TRACK);
 			if (t->lookahead != nullptr) t->lookahead->flags.Set(TrainReservationLookAheadFlag::ApplyAdvisory);
 		}
@@ -1418,7 +1418,7 @@ static std::tuple<int32_t, uint32_t> GetServiceIntervalRange(const IntSettingDes
 static void TrainAccelerationModelChanged(int32_t new_value)
 {
 	for (Train *t : Train::IterateFrontOnly()) {
-		if (t->IsFrontEngine()) {
+		if (t->IsFrontUnit()) {
 			t->tcache.cached_max_curve_speed = t->GetCurveSpeedLimit();
 			t->UpdateAcceleration();
 			if (t->lookahead != nullptr) t->lookahead->flags.Set(TrainReservationLookAheadFlag::ApplyAdvisory);
@@ -1471,7 +1471,7 @@ static void TrainBrakingModelChanged(int32_t new_value)
 		if (!t->vehstatus.Test(VehState::Crashed)) {
 			t->crash_anim_pos = 0;
 		}
-		if (t->IsFrontEngine()) {
+		if (t->IsFrontUnit()) {
 			t->UpdateAcceleration();
 		}
 	}
@@ -1552,7 +1552,7 @@ static void TrainBrakingModelChanged(int32_t new_value)
 static void TrainSlopeSteepnessChanged(int32_t new_value)
 {
 	for (Train *t : Train::IterateFrontOnly()) {
-		if (t->IsFrontEngine()) {
+		if (t->IsFrontUnit()) {
 			t->CargoChanged();
 			if (t->lookahead != nullptr) t->lookahead->flags.Set(TrainReservationLookAheadFlag::ApplyAdvisory);
 		}

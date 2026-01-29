@@ -14,6 +14,10 @@
 #include "core/pool_type.hpp"
 #include "core/tinystring_type.hpp"
 
+#include "consist_type.h"
+
+#include <set>
+
 typedef Pool<Depot, DepotID, 64> DepotPool;
 extern DepotPool _depot_pool;
 
@@ -28,6 +32,8 @@ struct Depot : DepotPool::PoolItem<&_depot_pool> {
 	Depot() {}
 	Depot(TileIndex xy) : xy(xy), build_date(CalTime::CurDate()) {}
 	~Depot();
+
+	std::set<Consist*> vehicles;
 
 	static inline Depot *GetByTile(TileIndex tile)
 	{

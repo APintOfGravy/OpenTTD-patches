@@ -7,6 +7,7 @@
 
 /** @file vehicle.cpp Base implementations of all vehicles. */
 
+#include "depot_base.h"
 #include "stdafx.h"
 #include "error.h"
 #include "roadveh.h"
@@ -68,6 +69,7 @@
 #include "misc_cmd.h"
 #include "train_cmd.h"
 #include "vehicle_cmd.h"
+#include "consist.h"
 #include "3rdparty/cpp-btree/btree_set.h"
 #include "3rdparty/cpp-btree/btree_map.h"
 #include "3rdparty/robin_hood/robin_hood.h"
@@ -211,7 +213,7 @@ void VehicleServiceInDepot(Vehicle *v)
 		Train::From(v)->critical_breakdown_count = 0;
 		const RailVehicleInfo &rvi = e->VehInfo<RailVehicleInfo>();
 		v->vcache.cached_max_speed = rvi.max_speed;
-		if (Train::From(v)->IsFrontEngine()) {
+		if (Train::From(v)->IsFrontUnit()) {
 			Train::From(v)->ConsistChanged(CCF_REFIT);
 			Train::From(v)->flags &= ~((1 << VRF_BREAKDOWN_BRAKING) | VRF_IS_BROKEN);
 		}
@@ -292,7 +294,7 @@ bool Vehicle::NeedsServicing() const
 	}
 
 	if (this->type == VEH_TRAIN) {
-		const TemplateVehicle *tv = GetTemplateVehicleByGroupIDRecursive(this->group_id);
+		const TemplateVehicle *tv = GetTemplateVehicleByGroupIDRecursive(this->VCGroupID());
 		if (tv != nullptr) {
 			return ShouldServiceTrainForTemplateReplacement(Train::From(this), tv);
 		}
@@ -307,7 +309,7 @@ bool Vehicle::NeedsServicing() const
 
 	for (const Vehicle *v = this; v != nullptr; v = (v->type == VEH_TRAIN) ? Train::From(v)->GetNextUnit() : nullptr) {
 		bool replace_when_old = false;
-		EngineID new_engine = EngineReplacementForCompany(c, v->engine_type, v->group_id, &replace_when_old);
+		EngineID new_engine = EngineReplacementForCompany(c, v->engine_type, v->VCGroupID(), &replace_when_old);
 
 		/* Check engine availability */
 		if (new_engine == EngineID::Invalid() || !Engine::Get(new_engine)->company_avail.Test(v->owner)) continue;
@@ -371,9 +373,9 @@ bool Vehicle::NeedsServicing() const
 bool Vehicle::NeedsAutomaticServicing() const
 {
 	if (this->HasDepotOrder()) return false;
-	if (this->current_order.IsType(OT_LOADING)) return false;
-	if (this->current_order.IsType(OT_LOADING_ADVANCE)) return false;
-	if (this->current_order.IsType(OT_GOTO_DEPOT) && (this->current_order.GetDepotOrderType() & ODTFB_SERVICE) == 0) return false;
+	if (this->VCCurrentOrder().IsType(OT_LOADING)) return false;
+	if (this->VCCurrentOrder().IsType(OT_LOADING_ADVANCE)) return false;
+	if (this->VCCurrentOrder().IsType(OT_GOTO_DEPOT) && (this->VCCurrentOrder().GetDepotOrderType() & ODTFB_SERVICE) == 0) return false;
 	return NeedsServicing();
 }
 
@@ -403,8 +405,8 @@ uint Vehicle::Crash(bool)
 	SetWindowDirty(WC_VEHICLE_DETAILS, this->index);
 	SetWindowDirty(WC_VEHICLE_DEPOT, this->tile.base());
 
-	delete this->cargo_payment;
-	assert(this->cargo_payment == nullptr); // cleared by ~CargoPayment
+	delete this->VCCargoPayment();
+	assert(this->VCCargoPayment() == nullptr); // cleared by ~CargoPayment
 
 	return RandomRange(pass + 1); // Randomise deceased passengers.
 }
@@ -501,14 +503,9 @@ Vehicle::Vehicle(VehicleType type)
 {
 	this->type               = type;
 	this->coord.left         = INVALID_COORD;
-	this->group_id           = DEFAULT_GROUP;
 	this->fill_percent_te_id = INVALID_TE_ID;
-	this->first              = this;
 	this->colourmap          = PAL_NONE;
 	this->cargo_age_counter  = 1;
-	this->last_station_visited = StationID::Invalid();
-	this->last_loading_station = StationID::Invalid();
-	this->last_loading_tick = StateTicks{0};
 	this->cur_image_valid_dir  = INVALID_DIR;
 	this->vcache.cached_veh_flags = 0;
 }
@@ -1032,7 +1029,7 @@ bool Vehicle::IsEngineCountable() const
 		case VEH_TRAIN:
 			return !this->IsArticulatedPart() && // tenders and other articulated parts
 					!Train::From(this)->IsRearDualheaded(); // rear parts of multiheaded engines
-		case VEH_ROAD: return RoadVehicle::From(this)->IsFrontEngine();
+		case VEH_ROAD: return RoadVehicle::From(this)->IsFrontUnit();
 		case VEH_SHIP: return Ship::From(this)->IsPrimaryVehicle();
 		default: return false; // Only count company buildable vehicles
 	}
@@ -1150,14 +1147,14 @@ void Vehicle::PreDestructor()
 		}
 	);
 
-	if (Station::IsValidID(this->last_station_visited)) {
-		Station *st = Station::Get(this->last_station_visited);
+	if (Station::IsValidID(this->VCLastStationVisited())) {
+		Station *st = Station::Get(this->VCLastStationVisited());
 		st->loading_vehicles.erase(std::remove(st->loading_vehicles.begin(), st->loading_vehicles.end(), this), st->loading_vehicles.end());
 
 		HideFillingPercent(&this->fill_percent_te_id);
 		this->CancelReservation(StationID::Invalid(), st);
-		delete this->cargo_payment;
-		dbg_assert(this->cargo_payment == nullptr); // cleared by ~CargoPayment
+		delete this->VCCargoPayment();
+		dbg_assert(this->VCCargoPayment() == nullptr); // cleared by ~CargoPayment
 	}
 
 	if (this->IsEngineCountable()) {
@@ -1165,7 +1162,7 @@ void Vehicle::PreDestructor()
 		if (this->IsPrimaryVehicle()) GroupStatistics::CountVehicle(this, -1);
 		GroupStatistics::UpdateAutoreplace(this->owner);
 
-		if (this->owner == _local_company) InvalidateAutoreplaceWindow(this->engine_type, this->group_id);
+		if (this->owner == _local_company) InvalidateAutoreplaceWindow(this->engine_type, this->VCGroupID());
 		DeleteGroupHighlightOfVehicle(this);
 		if (this->type == VEH_TRAIN) {
 			extern void DeleteTraceRestrictSlotHighlightOfVehicle(const Vehicle *v);
@@ -1174,7 +1171,7 @@ void Vehicle::PreDestructor()
 		}
 	}
 
-	Company::Get(this->owner)->freeunits[this->type].ReleaseID(this->unitnumber);
+	Company::Get(this->owner)->freeunits[this->type].ReleaseID(this->VCUnitNumber());
 
 	if (this->type == VEH_AIRCRAFT && this->IsPrimaryVehicle()) {
 		Aircraft *a = Aircraft::From(this);
@@ -1255,8 +1252,12 @@ Vehicle::~Vehicle()
 		if (this->IsDrawn()) this->MarkAllViewportsDirty();
 	}
 
+	if (this->consist != nullptr)
+	{
+		this->consist->EraseFromChain(this);
+	}
+
 	Vehicle *v = this->Next();
-	this->SetNext(nullptr);
 
 	delete v;
 
@@ -1283,13 +1284,18 @@ void Vehicle::PreCleanPool()
 static void VehicleEnteredDepotThisTick(Vehicle *v)
 {
 	/* Template Replacement Setup stuff */
-	if (GetTemplateIDByGroupIDRecursive(v->group_id) != INVALID_TEMPLATE) {
+	if (GetTemplateIDByGroupIDRecursive(v->VCGroupID()) != INVALID_TEMPLATE) {
 		/* Vehicle should stop in the depot if it was in 'stopping' state */
 		_vehicles_to_templatereplace.insert(v->index);
 	}
 
 	/* Vehicle should stop in the depot if it was in 'stopping' state */
 	_vehicles_to_autoreplace[v->index] = !v->vehstatus.Test(VehState::Stopped);
+
+	if (v->vehstatus.Test(VehState::Stopped) == true)
+	{
+		Depot::GetByTile(v->tile)->vehicles.emplace(v->consist);
+	}
 
 	/* We ALWAYS set the stopped state. Even when the vehicle does not plan on
 	 * stopping in the depot, so we stop it to ensure that it will not reserve
@@ -2264,7 +2270,7 @@ void DetermineBreakdownType(Vehicle *v, uint32_t r) {
 		v->breakdown_type = BREAKDOWN_CRITICAL;
 	} else if (rand <= breakdown_type_chance[BREAKDOWN_EM_STOP]) {
 		/* Non-front engines cannot have emergency stops */
-		if (v->type == VEH_TRAIN && !(Train::From(v)->IsFrontEngine())) {
+		if (v->type == VEH_TRAIN && !(Train::From(v)->IsFrontUnit())) {
 			return DetermineBreakdownType(v, Random());
 		}
 		v->breakdown_type = BREAKDOWN_EM_STOP;
@@ -2315,7 +2321,7 @@ void CheckVehicleBreakdown(Vehicle *v)
 			_settings_game.difficulty.vehicle_breakdowns < 1 ||
 			v->First()->cur_speed < 5 || _game_mode == GM_MENU ||
 			(v->type == VEH_AIRCRAFT && ((Aircraft*)v)->state != FLYING) ||
-			(v->type == VEH_TRAIN && !(Train::From(v)->IsFrontEngine()) && !_settings_game.vehicle.improved_breakdowns)) {
+			(v->type == VEH_TRAIN && !(Train::From(v)->IsFrontUnit()) && !_settings_game.vehicle.improved_breakdowns)) {
 		return;
 	}
 
@@ -2388,8 +2394,8 @@ bool Vehicle::HandleBreakdown()
 				/* Aircraft just need this flag, the rest is handled elsewhere */
 				this->vehstatus.Set(VehState::AircraftBroken);
 				if(this->breakdown_type == BREAKDOWN_AIRCRAFT_SPEED ||
-						(this->current_order.IsType(OT_GOTO_DEPOT) &&
-						(this->current_order.GetDepotOrderType() & ODTFB_BREAKDOWN) &&
+						(this->VCCurrentOrder().IsType(OT_GOTO_DEPOT) &&
+						(this->VCCurrentOrder().GetDepotOrderType() & ODTFB_BREAKDOWN) &&
 						GetTargetAirportIfValid(Aircraft::From(this)) != nullptr)) return false;
 				FindBreakdownDestination(Aircraft::From(this));
 			} else if (this->type == VEH_TRAIN) {
@@ -2519,7 +2525,7 @@ bool Vehicle::HandleBreakdown()
 					this->breakdown_type == BREAKDOWN_RV_CRASH || this->breakdown_type == BREAKDOWN_BRAKE_OVERHEAT);
 
 		default:
-			if (!this->current_order.IsType(OT_LOADING)) this->breakdown_ctr--;
+			if (!this->VCCurrentOrder().IsType(OT_LOADING)) this->breakdown_ctr--;
 			return false;
 	}
 }
@@ -2572,7 +2578,7 @@ void AgeVehicle(Vehicle *v)
 	/* Don't warn if a renew is active */
 	if (c->settings.engine_renew && v->GetEngine()->company_avail.Any()) return;
 	/* Don't warn if a replacement is active */
-	if (EngineHasReplacementForCompany(c, v->engine_type, v->group_id)) return;
+	if (EngineHasReplacementForCompany(c, v->engine_type, v->VCGroupID())) return;
 
 	StringID str;
 	if (age == -DAYS_IN_LEAP_YEAR) {
@@ -2605,14 +2611,14 @@ uint8_t CalcPercentVehicleFilled(const Vehicle *front, StringID *colour)
 	int unloading = 0;
 	bool loading = false;
 
-	bool is_loading = front->current_order.IsType(OT_LOADING);
+	bool is_loading = front->VCCurrentOrder().IsType(OT_LOADING);
 
 	/* The station may be nullptr when the (colour) string does not need to be set. */
-	const Station *st = Station::GetIfValid(front->last_station_visited);
+	const Station *st = Station::GetIfValid(front->VCLastStationVisited());
 	assert(colour == nullptr || (st != nullptr && is_loading));
 
-	bool order_no_load = is_loading && (front->current_order.GetLoadType() & OLFB_NO_LOAD);
-	bool order_full_load = is_loading && (front->current_order.GetLoadType() & OLFB_FULL_LOAD);
+	bool order_no_load = is_loading && (front->VCCurrentOrder().GetLoadType() & OLFB_NO_LOAD);
+	bool order_full_load = is_loading && (front->VCCurrentOrder().GetLoadType() & OLFB_FULL_LOAD);
 
 	/* Count up max and used */
 	for (const Vehicle *v = front; v != nullptr; v = v->Next()) {
@@ -2749,35 +2755,35 @@ void VehicleEnterDepot(Vehicle *v)
 
 	InvalidateWindowData(WC_VEHICLE_VIEW, v->index);
 
-	if (v->current_order.IsType(OT_GOTO_DEPOT)) {
+	if (v->VCCurrentOrder().IsType(OT_GOTO_DEPOT)) {
 		SetWindowDirty(WC_VEHICLE_VIEW, v->index);
 
-		const Order *real_order = v->GetOrder(v->cur_real_order_index);
+		const Order *real_order = v->GetOrder(v->VCCurRealOrderIndex());
 
 		/* Test whether we are heading for this depot. If not, do nothing.
 		 * Note: The target depot for nearest-/manual-depot-orders is only updated on junctions, but we want to accept every depot. */
-		if ((v->current_order.GetDepotOrderType() & ODTFB_PART_OF_ORDERS) &&
+		if ((v->VCCurrentOrder().GetDepotOrderType() & ODTFB_PART_OF_ORDERS) &&
 				real_order != nullptr && !(real_order->GetDepotActionType() & ODATFB_NEAREST_DEPOT) &&
-				(v->type == VEH_AIRCRAFT ? v->current_order.GetDestination() != GetStationIndex(v->tile) : v->dest_tile != v->tile)) {
+				(v->type == VEH_AIRCRAFT ? v->VCCurrentOrder().GetDestination() != GetStationIndex(v->tile) : v->dest_tile != v->tile)) {
 			/* We are heading for another depot, keep driving. */
 			return;
 		}
 
 		/* Test whether we are heading for this depot. If not, do nothing. */
-		if ((v->current_order.GetDepotExtraFlags() & ODEFB_SPECIFIC) &&
-				(v->type == VEH_AIRCRAFT ? v->current_order.GetDestination() != GetStationIndex(v->tile) : v->dest_tile != v->tile)) {
+		if ((v->VCCurrentOrder().GetDepotExtraFlags() & ODEFB_SPECIFIC) &&
+				(v->type == VEH_AIRCRAFT ? v->VCCurrentOrder().GetDestination() != GetStationIndex(v->tile) : v->dest_tile != v->tile)) {
 			/* We are heading for another depot, keep driving. */
 			return;
 		}
 
-		if (v->current_order.GetDepotActionType() & ODATFB_SELL) {
+		if (v->VCCurrentOrder().GetDepotActionType() & ODATFB_SELL) {
 			_vehicles_to_sell.insert(v->index);
 			return;
 		}
 
-		if (v->current_order.IsRefit()) {
+		if (v->VCCurrentOrder().IsRefit()) {
 			Backup<CompanyID> cur_company(_current_company, v->owner, FILE_LINE);
-			CommandCost cost = Command<CMD_REFIT_VEHICLE>::Do(DoCommandFlag::Execute, v->index, v->current_order.GetRefitCargo(), 0xFF, false, false, 0);
+			CommandCost cost = Command<CMD_REFIT_VEHICLE>::Do(DoCommandFlag::Execute, v->index, v->VCCurrentOrder().GetRefitCargo(), 0xFF, false, false, 0);
 			cur_company.Restore();
 
 			if (cost.Failed()) {
@@ -2797,25 +2803,25 @@ void VehicleEnterDepot(Vehicle *v)
 		/* Handle the ODTFB_PART_OF_ORDERS case. If there is a timetabled wait time, hold the train, otherwise skip to the next order.
 		Note that if there is a only a travel_time, but no wait_time defined for the order, and the train arrives to the depot sooner as scheduled,
 		he doesn't wait in it, as it would in stations. Thus, the original behaviour is maintained if there's no defined wait_time.*/
-		if (v->current_order.GetDepotOrderType() & ODTFB_PART_OF_ORDERS) {
+		if (v->VCCurrentOrder().GetDepotOrderType() & ODTFB_PART_OF_ORDERS) {
 			v->DeleteUnreachedImplicitOrders();
 			UpdateVehicleTimetable(v, true);
-			if (v->current_order.IsWaitTimetabled() && !(v->current_order.GetDepotActionType() & ODATFB_HALT)) {
-				v->current_order.MakeWaiting();
-				v->current_order.SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
+			if (v->VCCurrentOrder().IsWaitTimetabled() && !(v->VCCurrentOrder().GetDepotActionType() & ODATFB_HALT)) {
+				v->VCCurrentOrder().MakeWaiting();
+				v->VCCurrentOrder().SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
 				return;
 			} else {
 				v->IncrementImplicitOrderIndex();
 			}
 		}
 
-		if (v->current_order.GetDepotActionType() & ODATFB_HALT) {
+		if (v->VCCurrentOrder().GetDepotActionType() & ODATFB_HALT) {
 			/* Vehicles are always stopped on entering depots. Do not restart this one. */
 			_vehicles_to_autoreplace[v->index] = false;
 			/* Invalidate last_loading_station. As the link from the station
 			 * before the stop to the station after the stop can't be predicted
 			 * we shouldn't construct it when the vehicle visits the next stop. */
-			v->last_loading_station = StationID::Invalid();
+			v->VCLastLoadingStation() = StationID::Invalid();
 			v->vehicle_flags.Reset(VehicleFlag::LastLoadStationSeparate);
 
 			/* Clear unbunching data. */
@@ -2829,7 +2835,7 @@ void VehicleEnterDepot(Vehicle *v)
 		}
 
 		/* If we've entered our unbunching depot, record the round trip duration. */
-		if (v->current_order.GetDepotActionType() & ODATFB_UNBUNCH && v->unbunch_state != nullptr && v->unbunch_state->depot_unbunching_last_departure != INVALID_STATE_TICKS) {
+		if (v->VCCurrentOrder().GetDepotActionType() & ODATFB_UNBUNCH && v->unbunch_state != nullptr && v->unbunch_state->depot_unbunching_last_departure != INVALID_STATE_TICKS) {
 			Ticks measured_round_trip = (_state_ticks - v->unbunch_state->depot_unbunching_last_departure).AsTicks();
 			Ticks &rtt = v->unbunch_state->round_trip_time;
 			if (rtt == 0) {
@@ -2841,7 +2847,7 @@ void VehicleEnterDepot(Vehicle *v)
 			}
 		}
 
-		v->current_order.MakeDummy();
+		v->VCCurrentOrder().MakeDummy();
 	}
 }
 
@@ -3223,7 +3229,7 @@ const Livery *GetEngineLivery(EngineID engine_type, CompanyID company, EngineID 
 
 	if (livery_setting == LIT_ALL || (livery_setting == LIT_COMPANY && company == _local_company)) {
 		if (v != nullptr && !ignore_group) {
-			const Group *g = Group::GetIfValid(v->First()->group_id);
+			const Group *g = Group::GetIfValid(v->First()->VCGroupID());
 			if (g != nullptr) {
 				/* Traverse parents until we find a livery or reach the top */
 				while (g->livery.in_use == 0 && g->parent != GroupID::Invalid()) {
@@ -3333,12 +3339,12 @@ void Vehicle::DeleteUnreachedImplicitOrders()
 		if (HasBit(gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS)) {
 			/* Do not delete orders, only skip them */
 			ClrBit(gv_flags, GVF_SUPPRESS_IMPLICIT_ORDERS);
-			this->cur_implicit_order_index = this->cur_real_order_index;
-			if (this->cur_timetable_order_index != this->cur_real_order_index) {
-				Order *real_timetable_order = this->cur_timetable_order_index != INVALID_VEH_ORDER_ID ? this->GetOrder(this->cur_timetable_order_index) : nullptr;
+			this->VCCurImplicitOrderIndex() = this->VCCurRealOrderIndex();
+			if (this->VCCurTimetableOrderIndex() != this->VCCurRealOrderIndex()) {
+				Order *real_timetable_order = this->VCCurTimetableOrderIndex() != INVALID_VEH_ORDER_ID ? this->GetOrder(this->VCCurTimetableOrderIndex()) : nullptr;
 				if (real_timetable_order == nullptr || !real_timetable_order->IsType(OT_CONDITIONAL)) {
 					/* Timetable order ID was not the real order or a conditional order, to avoid updating the wrong timetable, just clear the timetable index */
-					this->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+					this->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 				}
 			}
 			InvalidateVehicleOrder(this, 0);
@@ -3346,22 +3352,22 @@ void Vehicle::DeleteUnreachedImplicitOrders()
 		}
 	}
 
-	const Order *order = this->GetOrder(this->cur_implicit_order_index);
+	const Order *order = this->GetOrder(this->VCCurImplicitOrderIndex());
 	while (order != nullptr) {
-		if (this->cur_implicit_order_index == this->cur_real_order_index) break;
+		if (this->VCCurImplicitOrderIndex() == this->VCCurRealOrderIndex()) break;
 
 		if (order->IsType(OT_IMPLICIT)) {
-			DeleteOrder(this, this->cur_implicit_order_index);
+			DeleteOrder(this, this->VCCurImplicitOrderIndex());
 			/* DeleteOrder does various magic with order_indices, so resync 'order' with 'cur_implicit_order_index' */
 		} else {
 			/* Skip non-implicit orders, e.g. service-orders */
-			this->cur_implicit_order_index++;
+			this->VCCurImplicitOrderIndex()++;
 		}
 
 		/* Wrap around */
-		if (this->cur_implicit_order_index >= this->orders->GetNumOrders()) this->cur_implicit_order_index = 0;
+		if (this->VCCurImplicitOrderIndex() >= this->VCOrders()->GetNumOrders()) this->VCCurImplicitOrderIndex() = 0;
 
-		order = this->GetOrder(this->cur_implicit_order_index);
+		order = this->GetOrder(this->VCCurImplicitOrderIndex());
 	}
 }
 
@@ -3374,13 +3380,13 @@ void Vehicle::DeleteUnreachedImplicitOrders()
 static void VehicleIncreaseStats(const Vehicle *front)
 {
 	for (const Vehicle *v = front; v != nullptr; v = v->Next()) {
-		StationID last_loading_station = front->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? v->last_loading_station : front->last_loading_station;
-		StateTicks loading_tick = front->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? v->last_loading_tick : front->last_loading_tick;
+		StationID last_loading_station = front->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? v->VCLastLoadingStation() : front->VCLastLoadingStation();
+		StateTicks loading_tick = front->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? v->VCLastLoadingTick() : front->VCLastLoadingTick();
 		if (v->refit_cap > 0 &&
 				last_loading_station != StationID::Invalid() &&
-				last_loading_station != front->last_station_visited &&
-				((front->current_order.GetCargoLoadType(v->cargo_type) & OLFB_NO_LOAD) == 0 ||
-				(front->current_order.GetCargoUnloadType(v->cargo_type) & OUFB_NO_UNLOAD) == 0)) {
+				last_loading_station != front->VCLastStationVisited() &&
+				((front->VCCurrentOrder().GetCargoLoadType(v->cargo_type) & OLFB_NO_LOAD) == 0 ||
+				(front->VCCurrentOrder().GetCargoUnloadType(v->cargo_type) & OUFB_NO_UNLOAD) == 0)) {
 			/* The cargo count can indeed be higher than the refit_cap if
 			 * wagons have been auto-replaced and subsequently auto-
 			 * refitted to a higher capacity. The cargo gets redistributed
@@ -3389,7 +3395,7 @@ static void VehicleIncreaseStats(const Vehicle *front)
 			 * ignore the additional cargo then.*/
 			EdgeUpdateModes restricted_modes{EdgeUpdateMode::Increase};
 			if (v->type == VEH_AIRCRAFT) restricted_modes.Set(EdgeUpdateMode::Aircraft);
-			IncreaseStats(Station::Get(last_loading_station), v->cargo_type, front->last_station_visited, v->refit_cap,
+			IncreaseStats(Station::Get(last_loading_station), v->cargo_type, front->VCLastStationVisited(), v->refit_cap,
 				std::min<uint>(v->refit_cap, v->cargo.StoredCount()), (_state_ticks - loading_tick).AsTicksT<uint32_t>(), restricted_modes);
 		}
 	}
@@ -3408,12 +3414,12 @@ void Vehicle::BeginLoading()
 	}
 
 	bool no_load_prepare = false;
-	if (this->current_order.IsType(OT_GOTO_STATION) &&
-			this->current_order.GetDestination() == this->last_station_visited) {
+	if (this->VCCurrentOrder().IsType(OT_GOTO_STATION) &&
+			this->VCCurrentOrder().GetDestination() == this->VCLastStationVisited()) {
 		this->DeleteUnreachedImplicitOrders();
 
 		/* Now both order indices point to the destination station, and we can start loading */
-		this->current_order.MakeLoading(true);
+		this->VCCurrentOrder().MakeLoading(true);
 		UpdateVehicleTimetable(this, true);
 
 		/* Furthermore add the Non Stop flag to mark that this station
@@ -3421,84 +3427,84 @@ void Vehicle::BeginLoading()
 		 * necessary to be known for HandleTrainLoading to determine
 		 * whether the train is lost or not; not marking a train lost
 		 * that arrives at random stations is bad. */
-		this->current_order.SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
-	} else if (this->current_order.IsType(OT_LOADING_ADVANCE)) {
-		this->current_order.MakeLoading(true);
-		this->current_order.SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
+		this->VCCurrentOrder().SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
+	} else if (this->VCCurrentOrder().IsType(OT_LOADING_ADVANCE)) {
+		this->VCCurrentOrder().MakeLoading(true);
+		this->VCCurrentOrder().SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
 		no_load_prepare = true;
 	} else {
 		/* We weren't scheduled to stop here. Insert an implicit order
 		 * to show that we are stopping here.
 		 * While only groundvehicles have implicit orders, e.g. aircraft might still enter
 		 * the 'wrong' terminal when skipping orders etc. */
-		Order *in_list = this->GetOrder(this->cur_implicit_order_index);
+		Order *in_list = this->GetOrder(this->VCCurImplicitOrderIndex());
 		if (this->IsGroundVehicle() &&
 				(in_list == nullptr || !in_list->IsType(OT_IMPLICIT) ||
-				in_list->GetDestination() != this->last_station_visited)) {
+				in_list->GetDestination() != this->VCLastStationVisited())) {
 			bool suppress_implicit_orders = HasBit(this->GetGroundVehicleFlags(), GVF_SUPPRESS_IMPLICIT_ORDERS);
 			/* Do not create consecutive duplicates of implicit orders */
-			const Order *prev_order = this->cur_implicit_order_index > 0 ? this->GetOrder(this->cur_implicit_order_index - 1) : (this->GetNumOrders() > 1 ? this->GetLastOrder() : nullptr);
+			const Order *prev_order = this->VCCurImplicitOrderIndex() > 0 ? this->GetOrder(this->VCCurImplicitOrderIndex() - 1) : (this->GetNumOrders() > 1 ? this->GetLastOrder() : nullptr);
 			if (prev_order == nullptr ||
 					(!prev_order->IsType(OT_IMPLICIT) && !prev_order->IsType(OT_GOTO_STATION)) ||
-					prev_order->GetDestination() != this->last_station_visited) {
+					prev_order->GetDestination() != this->VCLastStationVisited()) {
 
 				/* Prefer deleting implicit orders instead of inserting new ones,
 				 * so test whether the right order follows later. In case of only
 				 * implicit orders treat the last order in the list like an
 				 * explicit one, except if the overall number of orders surpasses
 				 * IMPLICIT_ORDER_ONLY_CAP. */
-				int target_index = this->cur_implicit_order_index;
+				int target_index = this->VCCurImplicitOrderIndex();
 				bool found = false;
-				while (target_index != this->cur_real_order_index || this->GetNumManualOrders() == 0) {
+				while (target_index != this->VCCurRealOrderIndex() || this->GetNumManualOrders() == 0) {
 					const Order *order = this->GetOrder(target_index);
 					if (order == nullptr) break; // No orders.
-					if (order->IsType(OT_IMPLICIT) && order->GetDestination() == this->last_station_visited) {
+					if (order->IsType(OT_IMPLICIT) && order->GetDestination() == this->VCLastStationVisited()) {
 						found = true;
 						break;
 					}
 					target_index++;
-					if (target_index >= this->orders->GetNumOrders()) {
+					if (target_index >= this->VCOrders()->GetNumOrders()) {
 						if (this->GetNumManualOrders() == 0 &&
 								this->GetNumOrders() < IMPLICIT_ORDER_ONLY_CAP) {
 							break;
 						}
 						target_index = 0;
 					}
-					if (target_index == this->cur_implicit_order_index) break; // Avoid infinite loop.
+					if (target_index == this->VCCurImplicitOrderIndex()) break; // Avoid infinite loop.
 				}
 
 				if (found) {
 					if (suppress_implicit_orders) {
 						/* Skip to the found order */
-						this->cur_implicit_order_index = target_index;
+						this->VCCurImplicitOrderIndex() = target_index;
 						InvalidateVehicleOrder(this, 0);
 					} else {
 						/* Delete all implicit orders up to the station we just reached */
-						const Order *order = this->GetOrder(this->cur_implicit_order_index);
-						while (!order->IsType(OT_IMPLICIT) || order->GetDestination() != this->last_station_visited) {
+						const Order *order = this->GetOrder(this->VCCurImplicitOrderIndex());
+						while (!order->IsType(OT_IMPLICIT) || order->GetDestination() != this->VCLastStationVisited()) {
 							if (order->IsType(OT_IMPLICIT)) {
-								DeleteOrder(this, this->cur_implicit_order_index);
+								DeleteOrder(this, this->VCCurImplicitOrderIndex());
 								/* DeleteOrder does various magic with order_indices, so resync 'order' with 'cur_implicit_order_index' */
 							} else {
 								/* Skip non-implicit orders, e.g. service-orders */
-								this->cur_implicit_order_index++;
+								this->VCCurImplicitOrderIndex()++;
 							}
 
 							/* Wrap around */
-							if (this->cur_implicit_order_index >= this->orders->GetNumOrders()) this->cur_implicit_order_index = 0;
+							if (this->VCCurImplicitOrderIndex() >= this->VCOrders()->GetNumOrders()) this->VCCurImplicitOrderIndex() = 0;
 
-							order = this->GetOrder(this->cur_implicit_order_index);
+							order = this->GetOrder(this->VCCurImplicitOrderIndex());
 
 							assert(order != nullptr);
 						}
 					}
 				} else if (!suppress_implicit_orders &&
-						((this->orders == nullptr ? OrderList::CanAllocateItem() : this->orders->GetNumOrders() < MAX_VEH_ORDER_ID))) {
+						((this->VCOrders() == nullptr ? OrderList::CanAllocateItem() : this->VCOrders()->GetNumOrders() < MAX_VEH_ORDER_ID))) {
 					/* Insert new implicit order */
 					Order implicit_order;
-					implicit_order.MakeImplicit(this->last_station_visited);
-					InsertOrder(this, std::move(implicit_order), this->cur_implicit_order_index);
-					if (this->cur_implicit_order_index > 0) --this->cur_implicit_order_index;
+					implicit_order.MakeImplicit(this->VCLastStationVisited());
+					InsertOrder(this, std::move(implicit_order), this->VCCurImplicitOrderIndex());
+					if (this->VCCurImplicitOrderIndex() > 0) --this->VCCurImplicitOrderIndex();
 
 					/* InsertOrder disabled creation of implicit orders for all vehicles with the same implicit order.
 					 * Re-enable it for this vehicle */
@@ -3507,7 +3513,7 @@ void Vehicle::BeginLoading()
 				}
 			}
 		}
-		this->current_order.MakeLoading(false);
+		this->VCCurrentOrder().MakeLoading(false);
 	}
 
 	if (!no_load_prepare) {
@@ -3519,9 +3525,9 @@ void Vehicle::BeginLoading()
 	DirtyVehicleListWindowForVehicle(this);
 	SetWindowWidgetDirty(WC_VEHICLE_VIEW, this->index, WID_VV_START_STOP);
 	SetWindowDirty(WC_VEHICLE_DETAILS, this->index);
-	SetWindowDirty(WC_STATION_VIEW, this->last_station_visited);
+	SetWindowDirty(WC_STATION_VIEW, this->VCLastStationVisited());
 
-	Station::Get(this->last_station_visited)->MarkTilesDirty(true);
+	Station::Get(this->VCLastStationVisited())->MarkTilesDirty(true);
 	this->cur_speed = 0;
 	this->MarkDirty();
 }
@@ -3533,7 +3539,7 @@ void Vehicle::BeginLoading()
  */
 void Vehicle::CancelReservation(StationID next, Station *st)
 {
-	for (Vehicle *v = this; v != nullptr; v = v->next) {
+	for (Vehicle *v = this; v != nullptr; v = v->Next()) {
 		VehicleCargoList &cargo = v->cargo;
 		if (cargo.ActionCount(VehicleCargoList::MTA_LOAD) > 0) {
 			Debug(misc, 1, "cancelling cargo reservation");
@@ -3546,11 +3552,11 @@ void Vehicle::CancelReservation(StationID next, Station *st)
 CargoTypes Vehicle::GetLastLoadingStationValidCargoMask() const
 {
 	if (!this->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate)) {
-		return (this->last_loading_station != StationID::Invalid()) ? ALL_CARGOTYPES : 0;
+		return (this->VCLastLoadingStation() != StationID::Invalid()) ? ALL_CARGOTYPES : 0;
 	} else {
 		CargoTypes cargo_mask = 0;
 		for (const Vehicle *u = this; u != nullptr; u = u->Next()) {
-			if (u->cargo_type < NUM_CARGO && u->last_loading_station != StationID::Invalid()) {
+			if (u->cargo_type < NUM_CARGO && u->VCLastLoadingStation() != StationID::Invalid()) {
 				SetBit(cargo_mask, u->cargo_type);
 			}
 		}
@@ -3564,10 +3570,10 @@ CargoTypes Vehicle::GetLastLoadingStationValidCargoMask() const
  */
 void Vehicle::LeaveStation()
 {
-	assert(this->current_order.IsAnyLoadingType());
+	assert(this->VCCurrentOrder().IsAnyLoadingType());
 
-	delete this->cargo_payment;
-	dbg_assert(this->cargo_payment == nullptr); // cleared by ~CargoPayment
+	delete this->VCCargoPayment();
+	dbg_assert(this->VCCargoPayment() == nullptr); // cleared by ~CargoPayment
 
 	this->vehicle_flags.Reset(VehicleFlag::ConditionalOrderWait);
 	this->vehicle_flags.Reset(VehicleFlag::StopLoading);
@@ -3584,14 +3590,14 @@ void Vehicle::LeaveStation()
 	}
 
 	/* Only update the timetable if the vehicle was supposed to stop here. */
-	if (this->current_order.GetNonStopType() != ONSF_STOP_EVERYWHERE) UpdateVehicleTimetable(this, false);
+	if (this->VCCurrentOrder().GetNonStopType() != ONSF_STOP_EVERYWHERE) UpdateVehicleTimetable(this, false);
 
-	CargoTypes cargoes_can_load_unload = this->current_order.FilterLoadUnloadTypeCargoMask([&](const Order *o, CargoType cargo) {
+	CargoTypes cargoes_can_load_unload = this->VCCurrentOrder().FilterLoadUnloadTypeCargoMask([&](const Order *o, CargoType cargo) {
 		return ((o->GetCargoLoadType(cargo) & OLFB_NO_LOAD) == 0) || ((o->GetCargoUnloadType(cargo) & OUFB_NO_UNLOAD) == 0);
 	});
 	CargoTypes has_cargo_mask = this->GetLastLoadingStationValidCargoMask();
 	CargoTypes cargoes_can_leave_with_cargo = FilterCargoMask([&](CargoType cargo) {
-		return this->current_order.CanLeaveWithCargo(HasBit(has_cargo_mask, cargo), cargo);
+		return this->VCCurrentOrder().CanLeaveWithCargo(HasBit(has_cargo_mask, cargo), cargo);
 	}, cargoes_can_load_unload);
 
 	if (cargoes_can_load_unload != 0) {
@@ -3607,43 +3613,43 @@ void Vehicle::LeaveStation()
 			/* can leave with all cargoes */
 
 			/* if the vehicle could load here or could stop with cargo loaded set the last loading station */
-			this->last_loading_station = this->last_station_visited;
-			this->last_loading_tick = _state_ticks;
+			this->VCLastLoadingStation() = this->VCLastStationVisited();
+			this->VCLastLoadingTick() = _state_ticks;
 			this->vehicle_flags.Reset(VehicleFlag::LastLoadStationSeparate);
 		} else if (cargoes_can_leave_with_cargo == 0) {
 			/* can leave with no cargoes */
 
 			/* if the vehicle couldn't load and had to unload or transfer everything
 			 * set the last loading station to invalid as it will leave empty. */
-			this->last_loading_station = StationID::Invalid();
+			this->VCLastLoadingStation() = StationID::Invalid();
 			this->vehicle_flags.Reset(VehicleFlag::LastLoadStationSeparate);
 		} else {
 			/* mix of cargoes loadable or could not leave with all cargoes */
 
 			/* NB: this is saved here as we overwrite it on the first iteration of the loop below */
-			StationID head_last_loading_station = this->last_loading_station;
-			StateTicks head_last_loading_tick = this->last_loading_tick;
+			StationID head_last_loading_station = this->VCLastLoadingStation();
+			StateTicks head_last_loading_tick = this->VCLastLoadingTick();
 			for (Vehicle *u = this; u != nullptr; u = u->Next()) {
-				StationID last_loading_station = this->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? u->last_loading_station : head_last_loading_station;
-				StateTicks last_loading_tick = this->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? u->last_loading_tick : head_last_loading_tick;
+				StationID last_loading_station = this->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? u->VCLastLoadingStation() : head_last_loading_station;
+				StateTicks last_loading_tick = this->vehicle_flags.Test(VehicleFlag::LastLoadStationSeparate) ? u->VCLastLoadingTick() : head_last_loading_tick;
 				if (u->cargo_type < NUM_CARGO && HasBit(cargoes_can_load_unload, u->cargo_type)) {
 					if (HasBit(cargoes_can_leave_with_cargo, u->cargo_type)) {
-						u->last_loading_station = this->last_station_visited;
-						u->last_loading_tick = _state_ticks;
+						u->VCLastLoadingStation() = this->VCLastStationVisited();
+						u->VCLastLoadingTick() = _state_ticks;
 					} else {
-						u->last_loading_station = StationID::Invalid();
+						u->VCLastLoadingStation() = StationID::Invalid();
 					}
 				} else {
-					u->last_loading_station = last_loading_station;
-					u->last_loading_tick = last_loading_tick;
+					u->VCLastLoadingStation() = last_loading_station;
+					u->VCLastLoadingTick() = last_loading_tick;
 				}
 			}
 			this->vehicle_flags.Set(VehicleFlag::LastLoadStationSeparate);
 		}
 	}
 
-	this->current_order.MakeLeaveStation();
-	Station *st = Station::Get(this->last_station_visited);
+	this->VCCurrentOrder().MakeLeaveStation();
+	Station *st = Station::Get(this->VCLastStationVisited());
 	this->CancelReservation(StationID::Invalid(), st);
 	st->loading_vehicles.erase(std::remove(st->loading_vehicles.begin(), st->loading_vehicles.end(), this), st->loading_vehicles.end());
 
@@ -3668,9 +3674,9 @@ void Vehicle::LeaveStation()
 		}
 	}
 
-	if (this->cur_real_order_index < this->GetNumOrders()) {
-		Order *real_current_order = this->GetOrder(this->cur_real_order_index);
-		if (real_current_order->IsType(OT_GOTO_STATION) && real_current_order->GetDestination() == this->last_station_visited) {
+	if (this->VCCurRealOrderIndex() < this->GetNumOrders()) {
+		Order *real_current_order = this->GetOrder(this->VCCurRealOrderIndex());
+		if (real_current_order->IsType(OT_GOTO_STATION) && real_current_order->GetDestination() == this->VCLastStationVisited()) {
 			uint current_occupancy = CalcPercentVehicleFilled(this, nullptr);
 			uint old_occupancy = real_current_order->GetOccupancy();
 			uint new_occupancy;
@@ -3704,7 +3710,7 @@ void Vehicle::LeaveStation()
  */
 void Vehicle::AdvanceLoadingInStation()
 {
-	assert(this->current_order.IsType(OT_LOADING));
+	assert(this->VCCurrentOrder().IsType(OT_LOADING));
 	dbg_assert(this->type == VEH_TRAIN);
 
 	ClrBit(Train::From(this)->flags, VRF_ADVANCE_IN_PLATFORM);
@@ -3718,8 +3724,8 @@ void Vehicle::AdvanceLoadingInStation()
 	}
 
 	HideFillingPercent(&this->fill_percent_te_id);
-	this->current_order.MakeLoadingAdvance(this->last_station_visited);
-	this->current_order.SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
+	this->VCCurrentOrder().MakeLoadingAdvance(this->VCLastStationVisited());
+	this->VCCurrentOrder().SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
 	if (Train::From(this)->lookahead != nullptr) Train::From(this)->lookahead->zpos_refresh_remaining = 0;
 	this->MarkDirty();
 }
@@ -3757,9 +3763,9 @@ void Vehicle::ResetRefitCaps()
  */
 void Vehicle::ReleaseUnitNumber()
 {
-	if (this->unitnumber != 0) {
-		Company::Get(this->owner)->freeunits[this->type].ReleaseID(this->unitnumber);
-		this->unitnumber = 0;
+	if (this->VCUnitNumber() != 0) {
+		Company::Get(this->owner)->freeunits[this->type].ReleaseID(this->VCUnitNumber());
+		this->VCUnitNumber() = 0;
 	}
 }
 
@@ -3771,10 +3777,10 @@ static bool ShouldVehicleContinueWaiting(Vehicle *v)
 	if (v->vehicle_flags.Test(VehicleFlag::ConditionalOrderWait) && v->tick_counter % 32 != 0) return true;
 
 	/* Don't use implicit orders for waiting loops */
-	if (v->cur_implicit_order_index < v->GetNumOrders() && v->GetOrder(v->cur_implicit_order_index)->IsType(OT_IMPLICIT)) return false;
+	if (v->VCCurImplicitOrderIndex() < v->GetNumOrders() && v->GetOrder(v->VCCurImplicitOrderIndex())->IsType(OT_IMPLICIT)) return false;
 
 	/* If conditional orders lead back to this order, just keep waiting without leaving the order */
-	bool loop = AdvanceOrderIndexDeferred(v, v->cur_implicit_order_index + 1) == v->cur_implicit_order_index;
+	bool loop = AdvanceOrderIndexDeferred(v, v->VCCurImplicitOrderIndex() + 1) == v->VCCurImplicitOrderIndex();
 	FlushAdvanceOrderIndexDeferred(v, loop);
 	if (loop) v->vehicle_flags.Set(VehicleFlag::ConditionalOrderWait);
 	return loop;
@@ -3787,20 +3793,20 @@ static bool ShouldVehicleContinueWaiting(Vehicle *v)
  */
 void Vehicle::HandleLoading(bool mode)
 {
-	switch (this->current_order.GetType()) {
+	switch (this->VCCurrentOrder().GetType()) {
 		case OT_LOADING: {
-			TimetableTicks wait_time = std::max<int>(this->current_order.GetTimetabledWait() - this->lateness_counter, 0);
+			TimetableTicks wait_time = std::max<int>(this->VCCurrentOrder().GetTimetabledWait() - this->VCLatenessCounter(), 0);
 
 			/* Save time just loading took since that is what goes into the timetable */
 			if (!this->vehicle_flags.Test(VehicleFlag::LoadingFinished)) {
-				this->current_loading_time = this->current_order_time;
+				this->VCCurrentLoadingTime() = this->VCCurrentOrderTime();
 			}
 
 			/* Pay the loading fee for using someone else's station, if appropriate */
-			if (!mode && this->type != VEH_TRAIN) PayStationSharingFee(this, Station::Get(this->last_station_visited));
+			if (!mode && this->type != VEH_TRAIN) PayStationSharingFee(this, Station::Get(this->VCLastStationVisited()));
 
 			/* Not the first call for this tick, or still loading */
-			if (mode || !this->vehicle_flags.Test(VehicleFlag::LoadingFinished) || (this->current_order_time < wait_time && this->current_order.GetLeaveType() != OLT_LEAVE_EARLY) || ShouldVehicleContinueWaiting(this)) {
+			if (mode || !this->vehicle_flags.Test(VehicleFlag::LoadingFinished) || (this->VCCurrentOrderTime() < wait_time && this->VCCurrentOrder().GetLeaveType() != OLT_LEAVE_EARLY) || ShouldVehicleContinueWaiting(this)) {
 				if (!mode && this->type == VEH_TRAIN && HasBit(Train::From(this)->flags, VRF_ADVANCE_IN_PLATFORM)) this->AdvanceLoadingInStation();
 				return;
 			}
@@ -3808,10 +3814,10 @@ void Vehicle::HandleLoading(bool mode)
 			this->LeaveStation();
 
 			/* Only advance to next order if we just loaded at the current one */
-			const Order *order = this->GetOrder(this->cur_implicit_order_index);
+			const Order *order = this->GetOrder(this->VCCurImplicitOrderIndex());
 			if (order == nullptr ||
 					(!order->IsType(OT_IMPLICIT) && !order->IsType(OT_GOTO_STATION)) ||
-					order->GetDestination() != this->last_station_visited) {
+					order->GetDestination() != this->VCLastStationVisited()) {
 				return;
 			}
 			break;
@@ -3833,11 +3839,11 @@ void Vehicle::HandleLoading(bool mode)
  */
 void Vehicle::HandleWaiting(bool stop_waiting, bool process_orders)
 {
-	switch (this->current_order.GetType()) {
+	switch (this->VCCurrentOrder().GetType()) {
 		case OT_WAITING: {
-			uint wait_time = std::max<int>(this->current_order.GetTimetabledWait() - this->lateness_counter, 0);
+			uint wait_time = std::max<int>(this->VCCurrentOrder().GetTimetabledWait() - this->VCLatenessCounter(), 0);
 			/* Vehicles holds on until waiting Timetabled time expires. */
-			if (!stop_waiting && this->current_order_time < wait_time && this->current_order.GetLeaveType() != OLT_LEAVE_EARLY) {
+			if (!stop_waiting && this->VCCurrentOrderTime() < wait_time && this->VCCurrentOrder().GetLeaveType() != OLT_LEAVE_EARLY) {
 				return;
 			}
 			if (!stop_waiting && process_orders && ShouldVehicleContinueWaiting(this)) {
@@ -3848,7 +3854,7 @@ void Vehicle::HandleWaiting(bool stop_waiting, bool process_orders)
 			this->vehicle_flags.Reset(VehicleFlag::ConditionalOrderWait);
 			UpdateVehicleTimetable(this, false);
 			this->IncrementImplicitOrderIndex();
-			this->current_order.MakeDummy();
+			this->VCCurrentOrder().MakeDummy();
 			if (this->type == VEH_TRAIN) Train::From(this)->force_proceed = TFP_NONE;
 			if (process_orders) ProcessOrders(this);
 			break;
@@ -3907,8 +3913,8 @@ bool Vehicle::HasUnbunchingOrder() const
 static bool PreviousOrderIsUnbunching(const Vehicle *v)
 {
 	/* If we are headed for the first order, we must wrap around back to the last order. */
-	bool is_first_order = (v->GetOrder(v->cur_implicit_order_index) == v->GetFirstOrder());
-	const Order *previous_order = (is_first_order) ? v->GetLastOrder() : v->GetOrder(v->cur_implicit_order_index - 1);
+	bool is_first_order = (v->GetOrder(v->VCCurImplicitOrderIndex()) == v->GetFirstOrder());
+	const Order *previous_order = (is_first_order) ? v->GetLastOrder() : v->GetOrder(v->VCCurImplicitOrderIndex() - 1);
 
 	if (previous_order == nullptr || !previous_order->IsType(OT_GOTO_DEPOT)) return false;
 	return (previous_order->GetDepotActionType() & ODATFB_UNBUNCH) != 0;
@@ -3928,7 +3934,7 @@ void Vehicle::LeaveUnbunchingDepot()
 	this->unbunch_state->depot_unbunching_last_departure = _state_ticks;
 
 	/* Tell the timetable we are now "on time." */
-	this->lateness_counter = 0;
+	this->VCLatenessCounter() = 0;
 	SetWindowDirty(WC_VEHICLE_TIMETABLE, this->index);
 
 	/* Find the average travel time of vehicles that we share orders with. */
@@ -4027,7 +4033,7 @@ CommandCost Vehicle::SendToDepot(DoCommandFlags flags, DepotCommandFlags command
 		if (flags.Test(DoCommandFlag::Execute)) {
 			/* If the orders to 'goto depot' are in the orders list (forced servicing),
 			 * then skip to the next order; effectively cancelling this forced service */
-			if (this->current_order.GetDepotOrderType() & ODTFB_PART_OF_ORDERS) this->IncrementRealOrderIndex();
+			if (this->VCCurrentOrder().GetDepotOrderType() & ODTFB_PART_OF_ORDERS) this->IncrementRealOrderIndex();
 
 			if (this->IsGroundVehicle()) {
 				uint16_t &gv_flags = this->GetGroundVehicleFlags();
@@ -4035,23 +4041,23 @@ CommandCost Vehicle::SendToDepot(DoCommandFlags flags, DepotCommandFlags command
 			}
 
 			/* We don't cancel a breakdown-related goto depot order, we only change whether to halt or not */
-			if (this->current_order.GetDepotOrderType() & ODTFB_BREAKDOWN) {
-				this->current_order.SetDepotActionType(this->current_order.GetDepotActionType() == ODATFB_HALT ? ODATF_SERVICE_ONLY : ODATFB_HALT);
+			if (this->VCCurrentOrder().GetDepotOrderType() & ODTFB_BREAKDOWN) {
+				this->VCCurrentOrder().SetDepotActionType(this->VCCurrentOrder().GetDepotActionType() == ODATFB_HALT ? ODATF_SERVICE_ONLY : ODATFB_HALT);
 			} else {
 				this->ClearSeparation();
 				if (this->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) this->vehicle_flags.Reset(VehicleFlag::TimetableStarted);
 
-				this->current_order.MakeDummy();
+				this->VCCurrentOrder().MakeDummy();
 				SetWindowWidgetDirty(WC_VEHICLE_VIEW, this->index, WID_VV_START_STOP);
 			}
 
 			/* prevent any attempt to update timetable for current order, as actual travel time will be incorrect due to depot command */
-			this->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+			this->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 		}
 	};
 
 	if (command.Test(DepotCommandFlag::Cancel)) {
-		if (this->current_order.IsType(OT_GOTO_DEPOT)) {
+		if (this->VCCurrentOrder().IsType(OT_GOTO_DEPOT)) {
 			cancel_order();
 			return CommandCost();
 		} else {
@@ -4059,16 +4065,16 @@ CommandCost Vehicle::SendToDepot(DoCommandFlags flags, DepotCommandFlags command
 		}
 	}
 
-	if (this->current_order.IsType(OT_GOTO_DEPOT) && !command.Test(DepotCommandFlag::Specific)) {
-		bool halt_in_depot = (this->current_order.GetDepotActionType() & ODATFB_HALT) != 0;
-		bool sell_in_depot = (this->current_order.GetDepotActionType() & ODATFB_SELL) != 0;
+	if (this->VCCurrentOrder().IsType(OT_GOTO_DEPOT) && !command.Test(DepotCommandFlag::Specific)) {
+		bool halt_in_depot = (this->VCCurrentOrder().GetDepotActionType() & ODATFB_HALT) != 0;
+		bool sell_in_depot = (this->VCCurrentOrder().GetDepotActionType() & ODATFB_SELL) != 0;
 		if (command.Test(DepotCommandFlag::Service) == halt_in_depot || command.Test(DepotCommandFlag::Sell) != sell_in_depot) {
 			/* We called with a different DepotCommandFlag::Service or DepotCommandFlag::Sell setting.
 			 * Now we change the setting to apply the new one and let the vehicle head for the same depot.
 			 * Note: the if is (true for requesting service == true for ordered to stop in depot)          */
 			if (flags.Test(DoCommandFlag::Execute)) {
-				if (!(this->current_order.GetDepotOrderType() & ODTFB_BREAKDOWN)) this->current_order.SetDepotOrderType(ODTF_MANUAL);
-				this->current_order.SetDepotActionType(command.Test(DepotCommandFlag::Sell) ? ODATFB_HALT | ODATFB_SELL : (command.Test(DepotCommandFlag::Service) ? ODATF_SERVICE_ONLY : ODATFB_HALT));
+				if (!(this->VCCurrentOrder().GetDepotOrderType() & ODTFB_BREAKDOWN)) this->VCCurrentOrder().SetDepotOrderType(ODTF_MANUAL);
+				this->VCCurrentOrder().SetDepotActionType(command.Test(DepotCommandFlag::Sell) ? ODATFB_HALT | ODATFB_SELL : (command.Test(DepotCommandFlag::Service) ? ODATF_SERVICE_ONLY : ODATFB_HALT));
 				this->ClearSeparation();
 				if (this->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) this->vehicle_flags.Reset(VehicleFlag::TimetableStarted);
 				SetWindowWidgetDirty(WC_VEHICLE_VIEW, this->index, WID_VV_START_STOP);
@@ -4101,8 +4107,8 @@ CommandCost Vehicle::SendToDepot(DoCommandFlags flags, DepotCommandFlags command
 	}
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		if (this->current_order.IsAnyLoadingType()) this->LeaveStation();
-		if (this->current_order.IsType(OT_WAITING)) this->HandleWaiting(true);
+		if (this->VCCurrentOrder().IsAnyLoadingType()) this->LeaveStation();
+		if (this->VCCurrentOrder().IsType(OT_WAITING)) this->HandleWaiting(true);
 
 		if (this->type == VEH_TRAIN) {
 			for (Train *v = Train::From(this); v != nullptr; v = v->Next()) {
@@ -4116,19 +4122,19 @@ CommandCost Vehicle::SendToDepot(DoCommandFlags flags, DepotCommandFlags command
 		}
 
 		this->SetDestTile(closest_depot.location);
-		this->current_order.MakeGoToDepot(closest_depot.destination.ToDepotID(), ODTF_MANUAL);
+		this->VCCurrentOrder().MakeGoToDepot(closest_depot.destination.ToDepotID(), ODTF_MANUAL);
 		if (command.Test(DepotCommandFlag::Sell)) {
-			this->current_order.SetDepotActionType(ODATFB_HALT | ODATFB_SELL);
+			this->VCCurrentOrder().SetDepotActionType(ODATFB_HALT | ODATFB_SELL);
 		} else if (!command.Test(DepotCommandFlag::Service)) {
-			this->current_order.SetDepotActionType(ODATFB_HALT);
+			this->VCCurrentOrder().SetDepotActionType(ODATFB_HALT);
 		}
 		if (command.Test(DepotCommandFlag::Specific)) {
-			this->current_order.SetDepotExtraFlags(ODEFB_SPECIFIC);
+			this->VCCurrentOrder().SetDepotExtraFlags(ODEFB_SPECIFIC);
 		}
 		SetWindowWidgetDirty(WC_VEHICLE_VIEW, this->index, WID_VV_START_STOP);
 
 		/* Prevent any attempt to update timetable for current order, as actual travel time will be incorrect due to depot command. */
-		this->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+		this->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 
 		/* If there is no depot in front and the train is not already reversing, reverse automatically (trains only) */
 		if (this->type == VEH_TRAIN && (closest_depot.reverse ^ HasBit(Train::From(this)->flags, VRF_REVERSING))) {
@@ -4324,7 +4330,7 @@ void Vehicle::ShowVisualEffect(uint max_speed) const
 		 */
 		if (HasBit(t->flags, VRF_REVERSING) ||
 				t->cur_speed > max_speed ||
-				(HasStationTileRail(t->tile) && t->IsFrontEngine() && t->current_order.ShouldStopAtStation(t, GetStationIndex(t->tile), IsRailWaypoint(t->tile)) &&
+				(HasStationTileRail(t->tile) && t->IsFrontUnit() && t->VCCurrentOrder().ShouldStopAtStation(t, GetStationIndex(t->tile), IsRailWaypoint(t->tile)) &&
 				t->cur_speed >= max_speed) ||
 				(t->reverse_distance >= 1 && (int)t->cur_speed >= ReversingDistanceTargetSpeed(t))) {
 			return;
@@ -4458,12 +4464,11 @@ void Vehicle::SetNext(Vehicle *next)
 
 	if (this->next != nullptr) {
 		/* We had an old next vehicle. Update the first and previous pointers */
-		for (Vehicle *v = this->next; v != nullptr; v = v->Next()) {
-			v->first = this->next;
-		}
-		this->next->previous = nullptr;
+		Vehicle* v = this->next;
 #if OTTD_UPPER_TAGGED_PTR
-		VehiclePoolOps::SetIsNonFrontVehiclePtr(_vehicle_pool.GetRawRef(this->next->index.base()), false);
+		VehiclePoolOps::SetIsNonFrontVehiclePtr(_vehicle_pool.GetRawRef(v->index.base()), false);
+		v->previous = nullptr;
+		new Consist(v);
 #endif
 	}
 
@@ -4472,14 +4477,27 @@ void Vehicle::SetNext(Vehicle *next)
 	if (this->next != nullptr) {
 		/* A new next vehicle. Update the first and previous pointers */
 		if (this->next->previous != nullptr) this->next->previous->next = nullptr;
-		this->next->previous = this;
+		previous = this;
 #if OTTD_UPPER_TAGGED_PTR
 		VehiclePoolOps::SetIsNonFrontVehiclePtr(_vehicle_pool.GetRawRef(this->next->index.base()), true);
 #endif
-		for (Vehicle *v = this->next; v != nullptr; v = v->Next()) {
-			v->first = this->first;
+		for (Vehicle *v = this->next; v != nullptr; v = v->Next())
+		{
+			v->SetConsist(this->consist);
 		}
 	}
+}
+
+inline void Vehicle::SetFirst(Vehicle *f) { this->consist->SetFirst(f); }
+
+void Vehicle::CoupleAhead(Vehicle* v)
+{
+	if (this->Previous() != nullptr) this->consist->ConnectBehind(this->Previous(), v, false);
+}
+
+void Vehicle::CoupleBehind(Vehicle* v, bool chain)
+{
+	this->consist->ConnectBehind(this, v, chain);
 }
 
 /**
@@ -4502,10 +4520,10 @@ void Vehicle::AddToShared(Vehicle *shared_chain)
 {
 	dbg_assert(this->previous_shared == nullptr && this->next_shared == nullptr);
 
-	if (shared_chain->orders == nullptr) {
+	if (shared_chain->VCOrders() == nullptr && OrderList::CanAllocateItem()) {
 		dbg_assert(shared_chain->previous_shared == nullptr);
 		dbg_assert(shared_chain->next_shared == nullptr);
-		this->orders = shared_chain->orders = new OrderList(nullptr, shared_chain);
+		this->VCOrders() = shared_chain->VCOrders() = new OrderList(nullptr, shared_chain);
 	}
 
 	this->next_shared     = shared_chain->next_shared;
@@ -4515,7 +4533,7 @@ void Vehicle::AddToShared(Vehicle *shared_chain)
 
 	if (this->next_shared != nullptr) this->next_shared->previous_shared = this;
 
-	shared_chain->orders->AddVehicle(this);
+	shared_chain->VCOrders()->AddVehicle(this);
 }
 
 /**
@@ -4528,7 +4546,7 @@ void Vehicle::RemoveFromShared()
 	bool were_first = (this->FirstShared() == this);
 	VehicleListIdentifier vli(VL_SHARED_ORDERS, this->type, this->owner, this->FirstShared()->index);
 
-	this->orders->RemoveVehicle(this);
+	this->VCOrders()->RemoveVehicle(this);
 
 	if (!were_first) {
 		/* We are not the first shared one, so only relink our previous one. */
@@ -4538,9 +4556,9 @@ void Vehicle::RemoveFromShared()
 	if (this->next_shared != nullptr) this->next_shared->previous_shared = this->previous_shared;
 
 
-	if (this->orders->GetNumVehicles() == 1) InvalidateVehicleOrder(this->FirstShared(), VIWD_MODIFY_ORDERS);
+	if (this->VCOrders()->GetNumVehicles() == 1) InvalidateVehicleOrder(this->FirstShared(), VIWD_MODIFY_ORDERS);
 
-	if (this->orders->GetNumVehicles() == 1 && !_settings_client.gui.enable_single_veh_shared_order_gui) {
+	if (this->VCOrders()->GetNumVehicles() == 1 && !_settings_client.gui.enable_single_veh_shared_order_gui) {
 		/* When there is only one vehicle, remove the shared order list window. */
 		CloseWindowById(GetWindowClassForVehicleType(this->type), vli.ToWindowNumber());
 	} else if (were_first) {
@@ -4680,7 +4698,7 @@ void Vehicle::DumpVehicleFlags(format_target &buffer, bool include_tile) const
 		TileIndex vtile = TileVirtXY(this->x_pos, this->y_pos);
 		if (this->tile != vtile) buffer.format(", VirtXYTile: {:X} ({} x {})", vtile, TileX(vtile), TileY(vtile));
 	}
-	if (this->cargo_payment) buffer.append(", CP");
+	if (this->VCCargoPayment()) buffer.append(", CP");
 }
 
 
@@ -4704,7 +4722,7 @@ void Vehicle::DumpVehicleFlagsMultiline(format_target &buffer, const char *base_
 		const RoadVehicle *r = RoadVehicle::From(this);
 		buffer.format("{}RV state: {:X}\n{}RV frame: {:X}\n", base_indent, r->state, base_indent, r->frame);
 	}
-	if (this->cargo_payment) buffer.format("{}cargo_payment present\n", base_indent);
+	if (this->VCCargoPayment()) buffer.format("{}cargo_payment present\n", base_indent);
 }
 
 void VehiclesYearlyLoop()
@@ -5000,13 +5018,13 @@ void DumpVehicleStats(struct format_target &buffer)
 void AdjustVehicleStateTicksBase(StateTicksDelta delta)
 {
 	for (Vehicle *v : Vehicle::Iterate()) {
-		if (v->timetable_start != 0) v->timetable_start += delta;
-		if (v->last_loading_tick != 0) v->last_loading_tick += delta;
+		if (v->VCTimetableStart() != 0) v->VCTimetableStart() += delta;
+		if (v->VCLastLoadingTick() != 0) v->VCLastLoadingTick() += delta;
 		if (v->unbunch_state != nullptr) {
 			if (v->unbunch_state->depot_unbunching_last_departure != INVALID_STATE_TICKS) v->unbunch_state->depot_unbunching_last_departure += delta;
 			if (v->unbunch_state->depot_unbunching_next_departure != INVALID_STATE_TICKS) v->unbunch_state->depot_unbunching_next_departure += delta;
 		}
-		for (auto &it : v->dispatch_records) {
+		for (auto &it : v->VCDispatchRecords()) {
 			it.second.dispatched += delta;
 		}
 	}
@@ -5090,7 +5108,39 @@ bool VehiclesHaveSameOrderList(const Vehicle *v1, const Vehicle *v2)
 		if (o1 == nullptr && o2 == nullptr) return true;
 		if (o1 == nullptr || o2 == nullptr) return false;
 		if (!o1->Equals(*o2)) return false;
-		o1 = v1->orders->GetNextNoWrap(o1);
-		o2 = v2->orders->GetNextNoWrap(o2);
+		o1 = v1->VCOrders()->GetNextNoWrap(o1);
+		o2 = v2->VCOrders()->GetNextNoWrap(o2);
 	}
 }
+
+void Vehicle::SetConsist(Consist* c)
+{
+	if (this->consist != nullptr && this->consist != c)
+	{
+		this->consist->EraseFromChain(this);
+	}
+
+	this->consist = c;
+}
+TinyString& Vehicle::VCName() const { return this->consist->name; }
+UnitID& Vehicle::VCUnitNumber() const { return this->consist->unitnumber; }
+GroupID& Vehicle::VCGroupID() const { return this->consist->group_id; }
+OrderList*& Vehicle::VCOrders() const { return this->consist->orders; }
+CargoPayment*& Vehicle::VCCargoPayment() const { return this->consist->cargo_payment; }
+Order& Vehicle::VCCurrentOrder() const { return this->consist->current_order; }
+StationID& Vehicle::VCLastStationVisited() const { return this->consist->last_station_visited; }
+StationID& Vehicle::VCLastLoadingStation() const { return this->consist->last_loading_station; }
+StateTicks& Vehicle::VCLastLoadingTick() const { return this->consist->last_loading_tick; }
+btree::btree_map<uint16_t, LastDispatchRecord>& Vehicle::VCDispatchRecords() const { return this->consist->dispatch_records; }
+uint32_t& Vehicle::VCCurrentLoadingTime() const { return this->consist->current_loading_time; }
+uint32_t& Vehicle::VCCurrentOrderTime() const { return this->consist->current_order_time; }
+int32_t& Vehicle::VCLatenessCounter() const { return this->consist->lateness_counter; }
+StateTicks& Vehicle::VCTimetableStart() const { return this->consist->timetable_start; }
+uint16_t& Vehicle::VCServiceInterval() const { return this->consist->service_interval; }
+VehicleOrderID& Vehicle::VCCurRealOrderIndex() const { return this->consist->cur_real_order_index; }
+VehicleOrderID& Vehicle::VCCurImplicitOrderIndex() const { return this->consist->cur_implicit_order_index; }
+VehicleOrderID& Vehicle::VCCurTimetableOrderIndex() const { return this->consist->cur_timetable_order_index; }
+
+inline Vehicle* Vehicle::Next() const { return this->next; }
+inline Vehicle* Vehicle::Previous() const { return this->previous; }
+Vehicle* Vehicle::First() const { return (this->consist == nullptr) ? nullptr : this->consist->FirstVehicle(); }

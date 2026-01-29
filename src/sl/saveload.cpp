@@ -20,6 +20,7 @@
  * </ol>
  */
 
+#include "saveload.h"
 #include "../stdafx.h"
 #include "../debug.h"
 #include "../station_base.h"
@@ -31,6 +32,7 @@
 #include "../core/bitmath_func.hpp"
 #include "../core/endian_func.hpp"
 #include "../core/string_consumer.hpp"
+#include "../consist.h"
 #include "../vehicle_base.h"
 #include "../company_func.h"
 #include "../date_func.h"
@@ -1454,6 +1456,7 @@ static size_t ReferenceToInt(const void *obj, SLRefType rt)
 		case REF_VEHICLE_OLD: // Old vehicles we save as new ones
 		case REF_VEHICLE:   return ((const  Vehicle*)obj)->index + 1;
 		case REF_TEMPLATE_VEHICLE: return ((const TemplateVehicle*)obj)->index + 1;
+		case REF_CONSIST:   return ((const  Consist*)obj)->index + 1;
 		case REF_STATION:   return ((const  Station*)obj)->index + 1;
 		case REF_TOWN:      return ((const     Town*)obj)->index + 1;
 		case REF_ORDER:     return ((const OrderPoolItem*)obj)->index + 1;
@@ -1516,6 +1519,11 @@ void *IntToReference(size_t index, SLRefType rt)
 		case REF_TEMPLATE_VEHICLE:
 			if (TemplateVehicle::IsValidID(index)) return TemplateVehicle::Get(index);
 			SlErrorCorruptWithChunk("Referencing invalid TemplateVehicle");
+
+		case REF_CONSIST:
+			if (Consist::IsValidID(index)) return Consist::Get(index);
+			SlErrorCorruptWithChunk("Referencing invalid Consist");
+
 
 		case REF_STATION:
 			if (Station::IsValidID(index)) return Station::Get(index);

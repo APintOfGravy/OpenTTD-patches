@@ -293,6 +293,7 @@ enum SLRefType {
 	REF_LINK_GRAPH       = 10,	///< Load/save a reference to a link graph.
 	REF_LINK_GRAPH_JOB   = 11,	///< Load/save a reference to a link graph job.
 	REF_TEMPLATE_VEHICLE = 12,	///< Load/save a reference to a template vehicle
+	REF_CONSIST          = 13,	///< Load/save a reference to a vehicle.
 };
 
 /** Flags for chunk extended headers */

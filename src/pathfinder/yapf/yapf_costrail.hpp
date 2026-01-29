@@ -655,9 +655,9 @@ no_entry_cost: // jump here at the beginning if the node has no parent (it is th
 				end_segment_reason.Set(EndSegmentReason::Depot);
 
 			} else if (cur.tile_type == MP_STATION && IsRailWaypoint(cur.tile)) {
-				if (v->current_order.IsType(OT_GOTO_WAYPOINT) &&
-						GetStationIndex(cur.tile) == v->current_order.GetDestination() &&
-						!Waypoint::Get(v->current_order.GetDestination().ToStationID())->IsSingleTile()) {
+				if (v->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT) &&
+						GetStationIndex(cur.tile) == v->VCCurrentOrder().GetDestination() &&
+						!Waypoint::Get(v->VCCurrentOrder().GetDestination().ToStationID())->IsSingleTile()) {
 					/* This waypoint is our destination; maybe this isn't an unreserved
 					 * one, so check that and if so see that as the last signal being
 					 * red. This way waypoints near stations should work better. */
@@ -695,7 +695,7 @@ no_entry_cost: // jump here at the beginning if the node has no parent (it is th
 						extra_cost += Yapf().PfGetSettings().rail_lastred_penalty;
 					}
 
-					if (v->current_order.GetWaypointFlags().Test(OrderWaypointFlag::Reverse) && HasStationReservation(cur.tile)) {
+					if (v->VCCurrentOrder().GetWaypointFlags().Test(OrderWaypointFlag::Reverse) && HasStationReservation(cur.tile)) {
 						extra_cost += Yapf().PfGetSettings().rail_pbs_station_penalty * 4;
 					}
 				}
@@ -724,7 +724,7 @@ no_entry_cost: // jump here at the beginning if the node has no parent (it is th
 			{
 				int min_speed = 0;
 				int max_speed = tf->GetSpeedLimit(&min_speed);
-				int max_veh_speed = std::min<int>(v->GetDisplayMaxSpeed(), v->current_order.GetMaxSpeed());
+				int max_veh_speed = std::min<int>(v->GetDisplayMaxSpeed(), v->VCCurrentOrder().GetMaxSpeed());
 				if (max_speed < max_veh_speed) {
 					extra_cost += YAPF_TILE_LENGTH * (max_veh_speed - max_speed) * (4 + tf->tiles_skipped) / max_veh_speed;
 				}

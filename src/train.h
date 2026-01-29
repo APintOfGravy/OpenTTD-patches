@@ -186,7 +186,7 @@ struct Train final : public GroundVehicle<Train, VEH_TRAIN> {
 	void UpdateDeltaXY() override;
 	ExpensesType GetExpenseType(bool income) const override { return income ? EXPENSES_TRAIN_REVENUE : EXPENSES_TRAIN_RUN; }
 	void PlayLeaveStationSound(bool force = false) const override;
-	bool IsPrimaryVehicle() const override { return this->IsFrontEngine(); }
+	bool IsPrimaryVehicle() const override { return this->IsFrontUnit(); }
 	void GetImage(Direction direction, EngineImageType image_type, VehicleSpriteSeq *result) const override;
 	int GetDisplaySpeed() const override { return this->gcache.last_speed; }
 	int GetDisplayMaxSpeed() const override { return this->vcache.cached_max_speed; }
@@ -202,6 +202,8 @@ struct Train final : public GroundVehicle<Train, VEH_TRAIN> {
 	Trackdir GetVehicleTrackdir() const override;
 	TileIndex GetOrderStationLocation(StationID station) override;
 	ClosestDepot FindClosestDepot() override;
+
+	bool IsUnitPowered() const override { return this->IsEngine(); }
 
 	void ReserveTrackUnderConsist() const;
 
@@ -373,7 +375,7 @@ protected: // These functions should not be called outside acceleration code.
 	 */
 	inline uint16_t GetBreakdownSpeed() const
 	{
-		assert(this->IsFrontEngine());
+		assert(this->IsFrontUnit());
 		uint16_t speed = UINT16_MAX;
 
 		for (const Train *w = this; w != nullptr; w = w->Next()) {

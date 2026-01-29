@@ -150,6 +150,8 @@ enum SlXvFeatureIndex {
 	XSLFI_ERNC_CHUNK,                             ///< ERNC chunk
 	XSLFI_STATION_CARGO_TRUNCATE,                 ///< Station cargo truncation setting
 
+	XSLFI_MAPLE_CONSISTS,                         ///<
+
 	XSLFI_SCRIPT_INT64,                           ///< See: SLV_SCRIPT_INT64
 	XSLFI_U64_TICK_COUNTER,                       ///< See: SLV_U64_TICK_COUNTER
 	XSLFI_LINKGRAPH_TRAVEL_TIME,                  ///< See: SLV_LINKGRAPH_TRAVEL_TIME

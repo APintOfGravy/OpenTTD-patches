@@ -2662,7 +2662,7 @@ void ViewportRouteOverlay::PrepareRoutePathsConditionalOrder(const Vehicle *veh,
 	/* Prevent excessive recursion */
 	if (depth >= 10) return;
 
-	for (; order != nullptr && state.lines_added < 16; order = veh->orders->GetNext(order)) {
+	for (; order != nullptr && state.lines_added < 16; order = veh->VCOrders()->GetNext(order)) {
 		if (!state.visited.insert(order).second) {
 			/* Already visited this order */
 			return;
@@ -2925,7 +2925,7 @@ void ViewportRouteOverlay::PrepareRouteSteps(const Vehicle *veh)
 
 	if (veh == nullptr || !_settings_client.gui.show_vehicle_route_steps || veh->GetNumOrders() == 0) return;
 
-	this->line_colour = veh->orders->GetRouteOverlayColour();
+	this->line_colour = veh->VCOrders()->GetRouteOverlayColour();
 
 	/* Prepare data. */
 	uint16_t order_rank = 0;
@@ -4978,9 +4978,9 @@ void ViewportRouteOverlay::PrepareRoutePathsAndMarkDirtyIfChanged(const Vehicle 
 void ViewportRouteOverlay::PrepareRouteAndMarkDirtyIfChanged(const Vehicle *veh)
 {
 	bool force_change = false;
-	if (veh != nullptr && veh->orders != nullptr) {
-		if (veh->orders->GetRouteOverlayColour() != this->line_colour) force_change = true;
-		this->line_colour = veh->orders->GetRouteOverlayColour();
+	if (veh != nullptr && veh->VCOrders() != nullptr) {
+		if (veh->VCOrders()->GetRouteOverlayColour() != this->line_colour) force_change = true;
+		this->line_colour = veh->VCOrders()->GetRouteOverlayColour();
 	}
 
 	this->PrepareRoutePathsAndMarkDirtyIfChanged(veh, force_change);
@@ -5456,7 +5456,7 @@ HandleViewportClickedResult HandleViewportClicked(const Viewport *vp, int x, int
 	bool result = CheckClickOnLandscape(vp, x, y);
 
 	if (v != nullptr) {
-		Debug(misc, 2, "Vehicle {} (index {}) at {}", v->unitnumber, v->index, fmt::ptr(v));
+		Debug(misc, 2, "Vehicle {} (index {}) at {}", v->VCUnitNumber(), v->index, fmt::ptr(v));
 		if (IsCompanyBuildableVehicleType(v)) {
 			v = v->First();
 			WindowClass wc = _thd.GetCallbackWnd()->window_class;

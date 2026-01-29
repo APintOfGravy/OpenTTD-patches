@@ -370,7 +370,7 @@ static bool DisasterTick_Ufo(DisasterVehicle *v)
 		n = RandomRange(n); // Choose one of them.
 		for (const RoadVehicle *u : RoadVehicle::IterateFrontOnly()) {
 			/* Find (n+1)-th road vehicle. */
-			if (u->IsFrontEngine() && (n-- == 0)) {
+			if (u->IsFrontUnit() && (n-- == 0)) {
 				if (u->crashed_ctr != 0 || !SetDisasterVehicleTargetingVehicle(u->index, v->index)) {
 					/* Targetted vehicle is crashed or already a target, destroy the UFO. */
 					delete v;
@@ -387,7 +387,7 @@ static bool DisasterTick_Ufo(DisasterVehicle *v)
 	} else {
 		/* Target a vehicle */
 		RoadVehicle *u = RoadVehicle::Get(v->dest_tile.base());
-		assert(u != nullptr && u->type == VEH_ROAD && u->IsFrontEngine());
+		assert(u != nullptr && u->type == VEH_ROAD && u->IsFrontUnit());
 
 		uint dist = Delta(v->x_pos, u->x_pos) + Delta(v->y_pos, u->y_pos);
 
@@ -610,7 +610,7 @@ static bool DisasterTick_Big_Ufo(DisasterVehicle *v)
 		v->state = 1;
 
 		const auto is_valid_target = [](const Train *t) {
-			return t->IsFrontEngine() // Only the engines
+			return t->IsFrontUnit() // Only the engines
 				&& Company::IsHumanID(t->owner) // Don't break AIs
 				&& IsPlainRailTile(t->tile) // No tunnels
 				&& !t->vehstatus.Test(VehState::Crashed); // Not crashed

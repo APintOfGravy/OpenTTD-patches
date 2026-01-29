@@ -212,8 +212,8 @@ protected:
 						if (this->source_mode == DSM_LIVE) this->vehicles.push_back(v);
 
 						if (show_vehicle_name) {
-							if (v->name.empty() && !(v->group_id != DEFAULT_GROUP && _settings_client.gui.vehicle_names != 0)) {
-								if (v->unitnumber > unitnumber_max[v->type]) unitnumber_max[v->type] = v->unitnumber;
+							if (v->VCName().empty() && !(v->VCGroupID() != DEFAULT_GROUP && _settings_client.gui.vehicle_names != 0)) {
+								if (v->VCUnitNumber() > unitnumber_max[v->type]) unitnumber_max[v->type] = v->VCUnitNumber();
 							} else {
 								std::string str = GetString(STR_DEPARTURES_VEH, v->index.base() | (_settings_client.gui.departure_show_group ? VEHICLE_NAME_NO_GROUP : 0));
 								int width = GetStringBoundingBox(str).width + 4;
@@ -221,8 +221,8 @@ protected:
 							}
 						}
 
-						if (v->group_id != GroupID::Invalid() && v->group_id != DEFAULT_GROUP && _settings_client.gui.departure_show_group) {
-							groups.insert(v->group_id);
+						if (v->VCGroupID() != GroupID::Invalid() && v->VCGroupID() != DEFAULT_GROUP && _settings_client.gui.departure_show_group) {
+							groups.insert(v->VCGroupID());
 						}
 
 						if (_settings_client.gui.departure_show_company) {
@@ -721,7 +721,7 @@ public:
 		}
 
 		this->filter_target = CallAtTargetID();
-		this->order_list_filter = v->orders;
+		this->order_list_filter = v->VCOrders();
 		this->UpdateVehicleTypeFilterDisableState();
 		this->OnInvalidateData(0, false);
 		ResetObjectToPlace();
@@ -1377,11 +1377,11 @@ void DeparturesWindow::DrawDeparturesListItems(const Rect &r) const
 		}
 
 		/* Group name */
-		if (_settings_client.gui.departure_show_group && d->vehicle->group_id != GroupID::Invalid() && d->vehicle->group_id != DEFAULT_GROUP) {
+		if (_settings_client.gui.departure_show_group && d->vehicle->VCGroupID() != GroupID::Invalid() && d->vehicle->VCGroupID() != DEFAULT_GROUP) {
 			const int group_left = ltr ? text_right - PadWidth(toc_width) - group_width : text_left + PadWidth(toc_width);
 			const int group_right = ltr ? text_right - PadWidth(toc_width) : text_left + PadWidth(toc_width) + group_width;
 
-			DrawString(group_left, group_right, y + 1, GetString(STR_DEPARTURES_GROUP, d->vehicle->group_id.base() | GROUP_NAME_HIERARCHY));
+			DrawString(group_left, group_right, y + 1, GetString(STR_DEPARTURES_GROUP, d->vehicle->VCGroupID().base() | GROUP_NAME_HIERARCHY));
 		}
 
 		/* Operating company */

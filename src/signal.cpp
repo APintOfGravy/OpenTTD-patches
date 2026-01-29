@@ -1577,9 +1577,9 @@ static void AddAspectDeferredWithVehicleRecord(const Train *v, TileIndex tile, T
 	item.tile = tile;
 	item.trackdir = trackdir;
 	if (IsRestrictedSignalTile(tile)) {
-		item.current_order = v->current_order;
-		item.cur_real_order_index = v->cur_real_order_index;
-		item.last_station_visited = v->last_station_visited;
+		item.current_order = v->VCCurrentOrder();
+		item.cur_real_order_index = v->VCCurRealOrderIndex();
+		item.last_station_visited = v->VCLastStationVisited();
 	}
 }
 
@@ -1685,13 +1685,13 @@ void DetermineCombineNormalShuntModeWithLookahead(Train *v, TileIndex tile, Trac
 						}
 					}, nullptr);
 					if (have_orders && (prog->actions_used_flags & TRPAUF_ORDER_CONDITIONALS)) {
-						std::swap(res_item.current_order, v->current_order);
-						std::swap(res_item.cur_real_order_index, v->cur_real_order_index);
-						std::swap(res_item.last_station_visited, v->last_station_visited);
+						std::swap(res_item.current_order, v->VCCurrentOrder());
+						std::swap(res_item.cur_real_order_index, v->VCCurRealOrderIndex());
+						std::swap(res_item.last_station_visited, v->VCLastStationVisited());
 						prog->Execute(v, input, out);
-						v->current_order = std::move(res_item.current_order);
-						v->cur_real_order_index = res_item.cur_real_order_index;
-						v->last_station_visited = res_item.last_station_visited;
+						v->VCCurrentOrder() = std::move(res_item.current_order);
+						v->VCCurRealOrderIndex() = res_item.cur_real_order_index;
+						v->VCLastStationVisited() = res_item.last_station_visited;
 					} else {
 						prog->Execute(v, input, out);
 					}

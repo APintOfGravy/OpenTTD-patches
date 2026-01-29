@@ -179,7 +179,7 @@ ScriptVehicleList_Group::ScriptVehicleList_Group(GroupID group_id)
 
 	ScriptList::FillListT<FrontVehicleOnlyFillListHelper>({}, this,
 		[owner](const Vehicle *v) { return v->owner == owner && v->IsPrimaryVehicle(); },
-		[group_id](const Vehicle *v) { return v->group_id == group_id; }
+		[group_id](const Vehicle *v) { return v->VCGroupID() == group_id; }
 	);
 }
 
@@ -192,6 +192,6 @@ ScriptVehicleList_DefaultGroup::ScriptVehicleList_DefaultGroup(ScriptVehicle::Ve
 
 	ScriptList::FillListT<VehicleTypeFrontVehicleOnlyFillListHelper>({ (::VehicleType)vehicle_type  }, this,
 		[owner](const Vehicle *v) { return v->owner == owner && v->IsPrimaryVehicle(); },
-		[](const Vehicle *v) { return v->group_id == ScriptGroup::GROUP_DEFAULT; }
+		[](const Vehicle *v) { return v->VCGroupID() == ScriptGroup::GROUP_DEFAULT; }
 	);
 }

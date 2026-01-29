@@ -132,11 +132,11 @@ Station::~Station()
 
 	for (Vehicle *v : Vehicle::Iterate()) {
 		/* Forget about this station if this station is removed */
-		if (v->last_station_visited == this->index) {
-			v->last_station_visited = StationID::Invalid();
+		if (v->VCLastStationVisited() == this->index) {
+			v->VCLastStationVisited() = StationID::Invalid();
 		}
-		if (v->last_loading_station == this->index) {
-			v->last_loading_station = StationID::Invalid();
+		if (v->VCLastLoadingStation() == this->index) {
+			v->VCLastLoadingStation() = StationID::Invalid();
 		}
 	}
 

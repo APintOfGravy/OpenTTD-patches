@@ -186,8 +186,8 @@ public:
 		Tpf pf(std::min(static_cast<uint32_t>(Map::Size() * NODES_PER_REGION) / WATER_REGION_NUMBER_OF_TILES, MAX_NUMBER_OF_NODES));
 		pf.SetDestination(start_water_region_patch);
 
-		if (v->current_order.IsType(OT_GOTO_STATION)) {
-			StationID station_id = v->current_order.GetDestination().ToStationID();
+		if (v->VCCurrentOrder().IsType(OT_GOTO_STATION)) {
+			StationID station_id = v->VCCurrentOrder().GetDestination().ToStationID();
 			const BaseStation *station = BaseStation::Get(station_id);
 			TileArea tile_area;
 			station->GetTileArea(&tile_area, StationType::Dock);

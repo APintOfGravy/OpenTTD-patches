@@ -42,7 +42,7 @@ OrderBackup::~OrderBackup()
  * @param v    The vehicle to make a backup of.
  * @param user The user that is requesting the backup.
  */
-OrderBackup::OrderBackup(const Vehicle *v, uint32_t user) : user(user), tile(v->tile), group(v->group_id)
+OrderBackup::OrderBackup(const Vehicle *v, uint32_t user) : user(user), tile(v->tile), group(v->VCGroupID())
 {
 	this->CopyConsistPropertiesFrom(v);
 
@@ -55,8 +55,8 @@ OrderBackup::OrderBackup(const Vehicle *v, uint32_t user) : user(user), tile(v->
 			this->orders.emplace_back(*order);
 		}
 
-		if (v->orders != nullptr) {
-			this->dispatch_schedules = v->orders->GetScheduledDispatchScheduleSet();
+		if (v->VCOrders() != nullptr) {
+			this->dispatch_schedules = v->VCOrders()->GetScheduledDispatchScheduleSet();
 		}
 	}
 
@@ -73,10 +73,10 @@ void OrderBackup::DoRestore(Vehicle *v)
 	if (this->clone != nullptr) {
 		Command<CMD_CLONE_ORDER>::Do(DoCommandFlag::Execute, CO_SHARE, v->index, this->clone->index);
 	} else if (!this->orders.empty() && OrderList::CanAllocateItem()) {
-		v->orders = new OrderList(std::move(this->orders), v);
+		v->VCOrders() = new OrderList(std::move(this->orders), v);
 		this->orders.clear();
 
-		v->orders->GetScheduledDispatchScheduleSet() = std::move(this->dispatch_schedules);
+		v->VCOrders()->GetScheduledDispatchScheduleSet() = std::move(this->dispatch_schedules);
 
 		/* Make sure buoys/oil rigs are updated in the station list. */
 		InvalidateWindowClassesData(WC_STATION_LIST, 0);
@@ -89,8 +89,8 @@ void OrderBackup::DoRestore(Vehicle *v)
 
 	/* Make sure orders are in range */
 	v->UpdateRealOrderIndex();
-	if (v->cur_implicit_order_index >= v->GetNumOrders()) v->cur_implicit_order_index = v->cur_real_order_index;
-	if (v->cur_timetable_order_index >= v->GetNumOrders()) v->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+	if (v->VCCurImplicitOrderIndex() >= v->GetNumOrders()) v->VCCurImplicitOrderIndex() = v->VCCurRealOrderIndex();
+	if (v->VCCurTimetableOrderIndex() >= v->GetNumOrders()) v->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 
 	/* Restore vehicle group */
 	Command<CMD_ADD_VEHICLE_GROUP>::Do(DoCommandFlag::Execute, this->group, v->index, false);

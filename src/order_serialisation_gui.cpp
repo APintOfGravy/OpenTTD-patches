@@ -84,8 +84,8 @@ struct OrderListImportErrorsWindow : GeneralVehicleWindow
 	void SaveOrders()
 	{
 		this->saved_vehicle_flags = this->vehicle->vehicle_flags;
-		if (this->vehicle->orders != nullptr) {
-			this->saved_orders = *this->vehicle->orders;
+		if (this->vehicle->VCOrders() != nullptr) {
+			this->saved_orders = *this->vehicle->VCOrders();
 		}
 	}
 
@@ -202,9 +202,9 @@ struct OrderListImportErrorsWindow : GeneralVehicleWindow
 			DrawSectionTitle("[Order Errors]");
 
 			AutoRestoreBackup flag_backup(const_cast<Vehicle *>(this->vehicle)->vehicle_flags, this->saved_vehicle_flags);
-			AutoRestoreBackup order_backup(const_cast<Vehicle *>(this->vehicle)->orders, const_cast<OrderList *>(&this->saved_orders));
-			AutoRestoreBackup order_idx_backup1(const_cast<Vehicle *>(this->vehicle)->cur_real_order_index, INVALID_VEH_ORDER_ID);
-			AutoRestoreBackup order_idx_backup2(const_cast<Vehicle *>(this->vehicle)->cur_implicit_order_index, INVALID_VEH_ORDER_ID);
+			AutoRestoreBackup order_backup(const_cast<Vehicle *>(this->vehicle)->VCOrders(), const_cast<OrderList *>(&this->saved_orders));
+			AutoRestoreBackup order_idx_backup1(const_cast<Vehicle *>(this->vehicle)->VCCurRealOrderIndex(), INVALID_VEH_ORDER_ID);
+			AutoRestoreBackup order_idx_backup2(const_cast<Vehicle *>(this->vehicle)->VCCurImplicitOrderIndex(), INVALID_VEH_ORDER_ID);
 
 			for (const Order *order : this->saved_orders.Orders()) {
 				const bool order_has_errors = this->errs.order.contains(order_index);

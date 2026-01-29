@@ -21,11 +21,13 @@
 #include "group_type.h"
 #include "timetable.h"
 #include "base_consist.h"
+#include "consist_type.h"
 #include "newgrf_cache_check.h"
 #include "landscape.h"
 #include "network/network.h"
 #include "core/alignment.hpp"
 #include "sl/saveload_common.h"
+
 #include <array>
 #include <vector>
 
@@ -252,8 +254,10 @@ struct VehicleUnbunchState {
 	Ticks round_trip_time = 0;                                        ///< How many ticks for a single circumnavigation of the orders.
 };
 
+using DispatchRecords = btree::btree_map<uint16_t, LastDispatchRecord>;
+
 /** %Vehicle data structure. */
-struct Vehicle : VehiclePool::PoolItem<&_vehicle_pool>, BaseVehicle, BaseConsist {
+struct Vehicle : VehiclePool::PoolItem<&_vehicle_pool>, BaseVehicle {
 	/* These are here for structure packing purposes */
 
 	CargoType cargo_type{};                      ///< type of cargo this vehicle is carrying
@@ -261,9 +265,10 @@ struct Vehicle : VehiclePool::PoolItem<&_vehicle_pool>, BaseVehicle, BaseConsist
 	TileIndex tile = INVALID_TILE;               ///< Current tile index
 
 private:
+	friend struct Consist;
+
 	Vehicle *next = nullptr;                     ///< pointer to the next vehicle in the chain
 	Vehicle *previous = nullptr;                 ///< NOSAVE: pointer to the previous vehicle in the chain
-	Vehicle *first = nullptr;                    ///< NOSAVE: pointer to the first vehicle in the chain
 
 	Vehicle *next_shared = nullptr;              ///< pointer to the next vehicle that shares the order
 	Vehicle *previous_shared = nullptr;          ///< NOSAVE: pointer to the previous vehicle in the shared order chain
@@ -279,12 +284,12 @@ public:
 
 	static void PreCleanPool();
 
+	Consist* consist = nullptr;
+
 	Money profit_this_year = 0;                  ///< Profit this year << 8, low 8 bits are fract
 	Money profit_last_year = 0;                  ///< Profit last year << 8, low 8 bits are fract
 	Money profit_lifetime = 0;                   ///< Profit lifetime << 8, low 8 bits are fract
 	Money value = 0;                             ///< Value of the vehicle
-
-	CargoPayment *cargo_payment = nullptr;       ///< The cargo payment we're currently in
 
 	/**
 	 * Heading for this tile.
@@ -292,9 +297,6 @@ public:
 	 * but it can be used for heuristic purposes to estimate the distance.
 	 */
 	TileIndex dest_tile = INVALID_TILE;
-
-	/* Used for timetabling. */
-	uint32_t current_loading_time = 0;           ///< How long loading took. Less than current_order_time if vehicle is early.
 
 	Rect coord{};                                ///< NOSAVE: Graphical bounding box of the vehicle, i.e. what to redraw on moves.
 
@@ -337,7 +339,6 @@ public:
 	 * 0xff == reserved for another custom sprite
 	 */
 	uint8_t spritenum = 0;
-	UnitID unitnumber = 0;                       ///< unit number, for display purposes only
 	VehicleSpriteSeq sprite_seq{};               ///< Vehicle appearance.
 	Rect16 sprite_seq_bounds{};
 	uint8_t x_extent = 0;                        ///< x-extent of vehicle bounding box
@@ -363,10 +364,6 @@ public:
 
 	uint8_t cargo_subtype = 0;                   ///< Used for livery refits (NewGRF variations)
 
-	StationID last_station_visited = StationID::Invalid(); ///< The last station we stopped at.
-	StationID last_loading_station = StationID::Invalid(); ///< Last station the vehicle has stopped at and could possibly leave from with any cargo loaded. (See VehicleFlag::LastLoadStationSeparate).
-	StateTicks last_loading_tick{};              ///< Last tick (_state_ticks) the vehicle has stopped at a station and could possibly leave with any cargo loaded. (See VehicleFlag::LastLoadStationSeparate).
-
 	VehicleCargoList cargo{};                    ///< The cargo this vehicle is carrying
 	uint16_t cargo_cap = 0;                      ///< total capacity
 	uint16_t refit_cap = 0;                      ///< Capacity left over from before last refit.
@@ -380,11 +377,6 @@ public:
 
 	VehStates vehstatus{};                       ///< Status
 	uint8_t subtype = 0;                         ///< subtype (Filled with values from #AircraftSubType/#DisasterSubType/#EffectVehicleType/#GroundVehicleSubtypeFlags)
-	GroupID group_id = GroupID::Invalid();       ///< Index of group Pool array
-
-	Order current_order{};                       ///< The current order (+ status, like: loading)
-
-	OrderList *orders = nullptr;                 ///< Pointer to the order list for this vehicle
 
 	NO_UNIQUE_ADDRESS NewGRFCache grf_cache{};   ///< Cache of often used calculated NewGRF values
 	Direction cur_image_valid_dir = INVALID_DIR; ///< NOSAVE: direction for which cur_image does not need to be regenerated on the next tick
@@ -392,6 +384,31 @@ public:
 	VehicleCache vcache{};                       ///< Cache of often used vehicle values.
 
 	std::unique_ptr<VehicleUnbunchState> unbunch_state{};
+
+	VehicleFlags vehicle_flags{};                 ///< Used for gradual loading and other miscellaneous things (@see VehicleFlags enum)
+
+	TinyString &VCName() const;
+	UnitID &VCUnitNumber() const;
+	GroupID &VCGroupID() const;
+	Order &VCCurrentOrder() const;
+	OrderList *&VCOrders() const;
+	CargoPayment *&VCCargoPayment() const;
+	StationID &VCLastStationVisited() const;
+	StationID &VCLastLoadingStation() const;
+	StateTicks &VCLastLoadingTick() const;
+	DispatchRecords& VCDispatchRecords() const;
+	uint32_t &VCCurrentLoadingTime() const;
+	uint32_t &VCCurrentOrderTime() const;
+	int32_t &VCLatenessCounter() const;
+	StateTicks &VCTimetableStart() const;
+	uint16_t &VCServiceInterval() const;
+	VehicleOrderID &VCCurRealOrderIndex() const;
+	VehicleOrderID &VCCurImplicitOrderIndex() const;
+	VehicleOrderID &VCCurTimetableOrderIndex() const;
+
+	void SetConsist(Consist* c);
+
+	virtual bool IsUnitPowered() const { return true; };
 
 	/**
 	 * Calculates the weight value that this vehicle will have when fully loaded with its current cargo.
@@ -624,15 +641,15 @@ public:
 	 */
 	bool IsStoppedInDepot() const
 	{
-		assert(this == this->First());
+		if (this != this->First()) return this->First()->IsStoppedInDepot();
 		/* Free wagons have no VehState::Stopped state */
 		if (this->IsPrimaryVehicle() && !this->vehstatus.Test(VehState::Stopped)) return false;
-		return this->IsChainInDepot();
+		return this->IsInDepot();
 	}
 
 	bool IsWaitingInDepot() const {
 		assert(this == this->First());
-		return this->current_order.IsType(OT_WAITING) && this->IsChainInDepot();
+		return this->VCCurrentOrder().IsType(OT_WAITING) && this->IsChainInDepot();
 	}
 
 	/**
@@ -694,27 +711,30 @@ public:
 	Money GetDisplayProfitLifetime() const { return ((this->profit_lifetime + this->profit_this_year) >> 8); }
 
 	void SetNext(Vehicle *next);
-	inline void SetFirst(Vehicle *f) { this->first = f; }
+	void SetFirst(Vehicle *f);
+
+	void CoupleAhead(Vehicle* v);
+	void CoupleBehind(Vehicle* v, bool chain = true);
 
 	/**
 	 * Get the next vehicle of this vehicle.
 	 * @note articulated parts are also counted as vehicles.
 	 * @return the next vehicle or nullptr when there isn't a next vehicle.
 	 */
-	inline Vehicle *Next() const { return this->next; }
+	Vehicle *Next() const;
 
 	/**
 	 * Get the previous vehicle of this vehicle.
 	 * @note articulated parts are also counted as vehicles.
 	 * @return the previous vehicle or nullptr when there isn't a previous vehicle.
 	 */
-	inline Vehicle *Previous() const { return this->previous; }
+	Vehicle *Previous() const;
 
 	/**
 	 * Get the first vehicle of this vehicle chain.
 	 * @return the first vehicle of the chain.
 	 */
-	inline Vehicle *First() const { return this->first; }
+	Vehicle *First() const;
 
 	/**
 	 * Get the last vehicle of this vehicle chain.
@@ -780,7 +800,7 @@ public:
 	 * Get the first order of the vehicles order list.
 	 * @return first order of order list.
 	 */
-	inline Order *GetFirstOrder() const { return (this->orders == nullptr) ? nullptr : this->orders->GetFirstOrder(); }
+	inline Order *GetFirstOrder() const { return (this->VCOrders() == nullptr) ? nullptr : this->VCOrders()->GetFirstOrder(); }
 
 	/**
 	 * Clears this vehicle's separation status
@@ -806,25 +826,25 @@ public:
 	 * Get the first vehicle of this vehicle chain.
 	 * @return the first vehicle of the chain.
 	 */
-	inline Vehicle *FirstShared() const { return (this->orders == nullptr) ? this->First() : this->orders->GetFirstSharedVehicle(); }
+	inline Vehicle *FirstShared() const { return (this->VCOrders() == nullptr) ? this->First() : this->VCOrders()->GetFirstSharedVehicle(); }
 
 	/**
 	 * Check if we share our orders with another vehicle.
 	 * @return true if there are other vehicles sharing the same order
 	 */
-	inline bool IsOrderListShared() const { return this->orders != nullptr && this->orders->IsShared(); }
+	inline bool IsOrderListShared() const { return this->VCOrders() != nullptr && this->VCOrders()->IsShared(); }
 
 	/**
 	 * Get the number of orders this vehicle has.
 	 * @return the number of orders this vehicle has.
 	 */
-	inline VehicleOrderID GetNumOrders() const { return (this->orders == nullptr) ? 0 : this->orders->GetNumOrders(); }
+	inline VehicleOrderID GetNumOrders() const { return (this->VCOrders() == nullptr) ? 0 : this->VCOrders()->GetNumOrders(); }
 
 	/**
 	 * Get the number of manually added orders this vehicle has.
 	 * @return the number of manually added orders this vehicle has.
 	 */
-	inline VehicleOrderID GetNumManualOrders() const { return (this->orders == nullptr) ? 0 : this->orders->GetNumManualOrders(); }
+	inline VehicleOrderID GetNumManualOrders() const { return (this->VCOrders() == nullptr) ? 0 : this->VCOrders()->GetNumManualOrders(); }
 
 	/**
 	 * Get the next station the vehicle will stop at.
@@ -833,7 +853,7 @@ public:
 	inline CargoStationIDVectorSet GetNextStoppingStation() const
 	{
 		CargoStationIDVectorSet set;
-		if (this->orders != nullptr) set.FillNextStoppingStation(this, this->orders);
+		if (this->VCOrders() != nullptr) set.FillNextStoppingStation(this, this->VCOrders());
 		return set;
 	}
 
@@ -844,7 +864,7 @@ public:
 	inline StationIDVector GetNextStoppingStationCargoIndependent() const
 	{
 		StationIDVector set;
-		if (this->orders != nullptr) set = this->orders->GetNextStoppingStation(this, 0).station;
+		if (this->VCOrders() != nullptr) set = this->VCOrders()->GetNextStoppingStation(this, 0).station;
 		return set;
 	}
 
@@ -868,27 +888,110 @@ public:
 	 */
 	inline void CopyVehicleConfigAndStatistics(Vehicle *src)
 	{
-		this->CopyConsistPropertiesFrom(src);
+		if (this == src) return;
+
+		this->VCName() = src->VCName();
+
+		this->VCCurrentOrderTime() = src->VCCurrentOrderTime();
+		this->VCLatenessCounter() = src->VCLatenessCounter();
+		this->VCTimetableStart() = src->VCTimetableStart();
+
+		this->VCServiceInterval() = src->VCServiceInterval();
+
+		this->VCCurRealOrderIndex() = src->VCCurRealOrderIndex();
+		this->VCCurImplicitOrderIndex() = src->VCCurImplicitOrderIndex();
+		this->VCCurTimetableOrderIndex() = src->VCCurTimetableOrderIndex();
+
+		if (src->vehicle_flags.Test(VehicleFlag::TimetableStarted)) this->vehicle_flags.Set(VehicleFlag::TimetableStarted);
+		if (src->vehicle_flags.Test(VehicleFlag::AutofillTimetable)) this->vehicle_flags.Set(VehicleFlag::AutofillTimetable);
+		if (src->vehicle_flags.Test(VehicleFlag::AutofillPreserveWaitTime)) this->vehicle_flags.Set(VehicleFlag::AutofillPreserveWaitTime);
+		if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent) != this->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent)) {
+			this->vehicle_flags.Flip(VehicleFlag::ServiceIntervalIsPercent);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsCustom)) this->vehicle_flags.Set(VehicleFlag::ServiceIntervalIsCustom);
+
+		if (src->vehicle_flags.Test(VehicleFlag::AutomateTimetable)) {
+			this->vehicle_flags.Set(VehicleFlag::AutomateTimetable);
+			this->vehicle_flags.Reset(VehicleFlag::AutofillTimetable);
+			this->vehicle_flags.Reset(VehicleFlag::AutofillPreserveWaitTime);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::AutomateTimetable);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) {
+			this->vehicle_flags.Set(VehicleFlag::TimetableSeparation);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::TimetableSeparation);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::ScheduledDispatch)) {
+			this->vehicle_flags.Set(VehicleFlag::ScheduledDispatch);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::ScheduledDispatch);
+		}
+
+		this->VCDispatchRecords() = src->VCDispatchRecords();
 
 		this->ReleaseUnitNumber();
-		this->unitnumber = src->unitnumber;
+		this->VCUnitNumber() = src->VCUnitNumber();
 
-		this->current_order = src->current_order;
+		this->VCCurrentOrder() = src->VCCurrentOrder();
 		this->dest_tile  = src->dest_tile;
 
 		this->profit_this_year = src->profit_this_year;
 		this->profit_last_year = src->profit_last_year;
 		this->profit_lifetime = -this->profit_this_year;
 
-		this->current_loading_time = src->current_loading_time;
+		this->VCCurrentLoadingTime() = src->VCCurrentLoadingTime();
 
 		if (src->vehicle_flags.Test(VehicleFlag::TimetableStarted)) this->vehicle_flags.Set(VehicleFlag::TimetableStarted);
 		if (src->vehicle_flags.Test(VehicleFlag::AutofillTimetable)) this->vehicle_flags.Set(VehicleFlag::AutofillTimetable);
 		if (src->vehicle_flags.Test(VehicleFlag::AutofillPreserveWaitTime)) this->vehicle_flags.Set(VehicleFlag::AutofillPreserveWaitTime);
 
-		this->service_interval = src->service_interval;
+		this->VCServiceInterval() = src->VCServiceInterval();
 
-		src->unitnumber = 0;
+		src->VCUnitNumber() = 0;
+	}
+
+	void CopyConsistPropertiesFrom(const BaseConsist *src)
+	{
+		this->VCName() = src->name;
+
+		this->VCCurrentOrderTime() = src->current_order_time;
+		this->VCLatenessCounter() = src->lateness_counter;
+		this->VCTimetableStart() = src->timetable_start;
+
+		this->VCServiceInterval() = src->service_interval;
+
+		this->VCCurRealOrderIndex() = src->cur_real_order_index;
+		this->VCCurImplicitOrderIndex() = src->cur_implicit_order_index;
+		this->VCCurTimetableOrderIndex() = src->cur_timetable_order_index;
+
+		if (src->vehicle_flags.Test(VehicleFlag::TimetableStarted)) this->vehicle_flags.Set(VehicleFlag::TimetableStarted);
+		if (src->vehicle_flags.Test(VehicleFlag::AutofillTimetable)) this->vehicle_flags.Set(VehicleFlag::AutofillTimetable);
+		if (src->vehicle_flags.Test(VehicleFlag::AutofillPreserveWaitTime)) this->vehicle_flags.Set(VehicleFlag::AutofillPreserveWaitTime);
+		if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent) != this->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent)) {
+			this->vehicle_flags.Flip(VehicleFlag::ServiceIntervalIsPercent);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsCustom)) this->vehicle_flags.Set(VehicleFlag::ServiceIntervalIsCustom);
+
+		if (src->vehicle_flags.Test(VehicleFlag::AutomateTimetable)) {
+			this->vehicle_flags.Set(VehicleFlag::AutomateTimetable);
+			this->vehicle_flags.Reset(VehicleFlag::AutofillTimetable);
+			this->vehicle_flags.Reset(VehicleFlag::AutofillPreserveWaitTime);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::AutomateTimetable);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) {
+			this->vehicle_flags.Set(VehicleFlag::TimetableSeparation);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::TimetableSeparation);
+		}
+		if (src->vehicle_flags.Test(VehicleFlag::ScheduledDispatch)) {
+			this->vehicle_flags.Set(VehicleFlag::ScheduledDispatch);
+		} else {
+			this->vehicle_flags.Reset(VehicleFlag::ScheduledDispatch);
+		}
+
+		this->VCDispatchRecords() = src->dispatch_records;
 	}
 
 
@@ -939,9 +1042,9 @@ public:
 	void UpdatePositionAndViewport();
 	void MarkAllViewportsDirty() const;
 
-	inline uint16_t GetServiceInterval() const { return this->service_interval; }
+	inline uint16_t GetServiceInterval() const { return this->VCServiceInterval(); }
 
-	inline void SetServiceInterval(uint16_t interval) { this->service_interval = interval; }
+	inline void SetServiceInterval(uint16_t interval) { this->VCServiceInterval() = interval; }
 
 	inline bool ServiceIntervalIsCustom() const { return this->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsCustom); }
 
@@ -971,13 +1074,13 @@ private:
 		if (this->GetNumManualOrders() > 0) {
 			/* Advance to next real order */
 			do {
-				this->cur_real_order_index++;
-				if (this->cur_real_order_index >= this->GetNumOrders()) this->cur_real_order_index = 0;
-			} while (this->GetOrder(this->cur_real_order_index)->IsType(OT_IMPLICIT));
-			this->cur_timetable_order_index = this->cur_real_order_index;
+				this->VCCurRealOrderIndex()++;
+				if (this->VCCurRealOrderIndex() >= this->GetNumOrders()) this->VCCurRealOrderIndex() = 0;
+			} while (this->GetOrder(this->VCCurRealOrderIndex())->IsType(OT_IMPLICIT));
+			this->VCCurTimetableOrderIndex() = this->VCCurRealOrderIndex();
 		} else {
-			this->cur_real_order_index = 0;
-			this->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+			this->VCCurRealOrderIndex() = 0;
+			this->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 		}
 	}
 
@@ -989,18 +1092,18 @@ public:
 	 */
 	void IncrementImplicitOrderIndex()
 	{
-		if (this->cur_implicit_order_index == this->cur_real_order_index) {
+		if (this->VCCurImplicitOrderIndex() == this->VCCurRealOrderIndex()) {
 			/* Increment real order index as well */
 			this->SkipToNextRealOrderIndex();
 		}
 
-		assert(this->cur_real_order_index == 0 || this->cur_real_order_index < this->GetNumOrders());
+		assert(this->VCCurRealOrderIndex() == 0 || this->VCCurRealOrderIndex() < this->GetNumOrders());
 
 		/* Advance to next implicit order */
 		do {
-			this->cur_implicit_order_index++;
-			if (this->cur_implicit_order_index >= this->GetNumOrders()) this->cur_implicit_order_index = 0;
-		} while (this->cur_implicit_order_index != this->cur_real_order_index && !this->GetOrder(this->cur_implicit_order_index)->IsType(OT_IMPLICIT));
+			this->VCCurImplicitOrderIndex()++;
+			if (this->VCCurImplicitOrderIndex() >= this->GetNumOrders()) this->VCCurImplicitOrderIndex() = 0;
+		} while (this->VCCurImplicitOrderIndex() != this->VCCurRealOrderIndex() && !this->GetOrder(this->VCCurImplicitOrderIndex())->IsType(OT_IMPLICIT));
 
 		InvalidateVehicleOrder(this, 0);
 	}
@@ -1013,7 +1116,7 @@ public:
 	 */
 	void IncrementRealOrderIndex()
 	{
-		if (this->cur_implicit_order_index == this->cur_real_order_index) {
+		if (this->VCCurImplicitOrderIndex() == this->VCCurRealOrderIndex()) {
 			/* Increment both real and implicit order */
 			this->IncrementImplicitOrderIndex();
 		} else {
@@ -1029,16 +1132,16 @@ public:
 	void UpdateRealOrderIndex()
 	{
 		/* Make sure the index is valid */
-		if (this->cur_real_order_index >= this->GetNumOrders()) this->cur_real_order_index = 0;
+		if (this->VCCurRealOrderIndex() >= this->GetNumOrders()) this->VCCurRealOrderIndex() = 0;
 
 		if (this->GetNumManualOrders() > 0) {
 			/* Advance to next real order */
-			while (this->GetOrder(this->cur_real_order_index)->IsType(OT_IMPLICIT)) {
-				this->cur_real_order_index++;
-				if (this->cur_real_order_index >= this->GetNumOrders()) this->cur_real_order_index = 0;
+			while (this->GetOrder(this->VCCurRealOrderIndex())->IsType(OT_IMPLICIT)) {
+				this->VCCurRealOrderIndex()++;
+				if (this->VCCurRealOrderIndex() >= this->GetNumOrders()) this->VCCurRealOrderIndex() = 0;
 			}
 		} else {
-			this->cur_real_order_index = 0;
+			this->VCCurRealOrderIndex() = 0;
 		}
 	}
 
@@ -1049,7 +1152,7 @@ public:
 	 */
 	inline const Order *GetOrder(VehicleOrderID index) const
 	{
-		return (this->orders == nullptr) ? nullptr : this->orders->GetOrderAt(index);
+		return (this->VCOrders() == nullptr) ? nullptr : this->VCOrders()->GetOrderAt(index);
 	}
 
 	inline Order *GetOrder(VehicleOrderID index) { return const_cast<Order *>(const_cast<const Vehicle *>(this)->GetOrder(index)); }
@@ -1061,7 +1164,7 @@ public:
 	 */
 	inline VehicleOrderID GetIndexOfOrder(const Order *order) const
 	{
-		return (this->orders == nullptr) ? INVALID_VEH_ORDER_ID : this->orders->GetIndexOfOrder(order);
+		return (this->VCOrders() == nullptr) ? INVALID_VEH_ORDER_ID : this->VCOrders()->GetIndexOfOrder(order);
 	}
 
 	/**
@@ -1070,7 +1173,7 @@ public:
 	 */
 	inline const Order *GetLastOrder() const
 	{
-		return (this->orders == nullptr) ? nullptr : this->orders->GetLastOrder();
+		return (this->VCOrders() == nullptr) ? nullptr : this->VCOrders()->GetLastOrder();
 	}
 
 	bool IsEngineCountable() const;
@@ -1206,12 +1309,12 @@ public:
 	 */
 	OrderIterateWrapper<const Order> Orders(VehicleOrderID from = 0) const
 	{
-		return this->orders == nullptr ? OrderIterateWrapper<const Order>(nullptr, nullptr) : const_cast<const OrderList *>(this->orders)->Orders(from);
+		return this->VCOrders() == nullptr ? OrderIterateWrapper<const Order>(nullptr, nullptr) : const_cast<const OrderList *>(this->VCOrders())->Orders(from);
 	}
 
 	OrderIterateWrapper<Order> Orders(VehicleOrderID from = 0)
 	{
-		return this->orders == nullptr ? OrderIterateWrapper<Order>(nullptr, nullptr) : this->orders->Orders(from);
+		return this->VCOrders() == nullptr ? OrderIterateWrapper<Order>(nullptr, nullptr) : this->VCOrders()->Orders(from);
 	}
 
 	uint32_t GetDisplayMaxWeight() const;

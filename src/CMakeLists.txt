@@ -120,6 +120,9 @@ add_files(
     company_gui.h
     company_manager_face.h
     company_type.h
+	consist_type.h
+    consist.h
+    consist.cpp
     console.cpp
     console_cmds.cpp
     console_func.h

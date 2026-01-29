@@ -383,16 +383,16 @@ bool TraceRestrictIsVehicleInSlotGroup(const TraceRestrictSlotGroup *sg, Owner o
 
 static const Order *TraceRestrictGetNextGotoOrder(const Train *v)
 {
-	if (v->orders == nullptr) return nullptr;
-	if (v->orders->GetNumOrders() == 0) return nullptr;
+	if (v->VCOrders() == nullptr) return nullptr;
+	if (v->VCOrders()->GetNumOrders() == 0) return nullptr;
 
 	const auto num_orders = v->GetNumOrders();
 	const uint max_depth = std::min<uint>(32, num_orders);
-	uint order_idx = v->cur_real_order_index;
+	uint order_idx = v->VCCurRealOrderIndex();
 	for (uint depth = 0; depth < max_depth; depth++) {
 		const Order *order = v->GetOrder(order_idx);
 		if (depth != 0) {
-			if (order_idx == v->cur_real_order_index) return nullptr;
+			if (order_idx == v->VCCurRealOrderIndex()) return nullptr;
 			if (order->IsGotoOrder()) return order;
 		}
 		if (order->IsType(OT_CONDITIONAL) && order->GetConditionVariable() == OCV_UNCONDITIONALLY) {
@@ -458,7 +458,7 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 						break;
 
 					case TRIT_COND_CURRENT_ORDER:
-						result = TestOrderCondition(&(v->current_order), item);
+						result = TestOrderCondition(&(v->VCCurrentOrder()), item);
 						break;
 
 					case TRIT_COND_NEXT_ORDER: {
@@ -470,7 +470,7 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 					}
 
 					case TRIT_COND_LAST_STATION:
-						result = TestStationCondition(v->last_station_visited, item);
+						result = TestStationCondition(v->VCLastStationVisited(), item);
 						break;
 
 					case TRIT_COND_CARGO: {
@@ -539,7 +539,7 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 					}
 
 					case TRIT_COND_TRAIN_GROUP: {
-						result = TestBinaryConditionCommon(item, GroupIsInGroup(v->group_id, item.GetValueAsGroup()));
+						result = TestBinaryConditionCommon(item, GroupIsInGroup(v->VCGroupID(), item.GetValueAsGroup()));
 						break;
 					}
 
@@ -655,22 +655,22 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 								break;
 
 							case TRTSVF_HEADING_TO_STATION_WAYPOINT:
-								has_status = v->current_order.IsType(OT_GOTO_STATION) || v->current_order.IsType(OT_GOTO_WAYPOINT);
+								has_status = v->VCCurrentOrder().IsType(OT_GOTO_STATION) || v->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT);
 								break;
 
 							case TRTSVF_HEADING_TO_DEPOT:
-								has_status = v->current_order.IsType(OT_GOTO_DEPOT);
+								has_status = v->VCCurrentOrder().IsType(OT_GOTO_DEPOT);
 								break;
 
 							case TRTSVF_LOADING: {
 								extern const Order *_choose_train_track_saved_current_order;
-								const Order *o = (_choose_train_track_saved_current_order != nullptr) ? _choose_train_track_saved_current_order : &(v->current_order);
+								const Order *o = (_choose_train_track_saved_current_order != nullptr) ? _choose_train_track_saved_current_order : &(v->VCCurrentOrder());
 								has_status = o->IsType(OT_LOADING) || o->IsType(OT_LOADING_ADVANCE);
 								break;
 							}
 
 							case TRTSVF_WAITING:
-								has_status = v->current_order.IsType(OT_WAITING);
+								has_status = v->VCCurrentOrder().IsType(OT_WAITING);
 								break;
 
 							case TRTSVF_LOST:
@@ -682,11 +682,11 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 								break;
 
 							case TRTSVF_STOPPING_AT_STATION_WAYPOINT:
-								switch (v->current_order.GetType()) {
+								switch (v->VCCurrentOrder().GetType()) {
 									case OT_GOTO_STATION:
 									case OT_GOTO_WAYPOINT:
 									case OT_LOADING_ADVANCE:
-										has_status = v->current_order.ShouldStopAtStation(v, v->current_order.GetDestination().ToStationID(), v->current_order.IsType(OT_GOTO_WAYPOINT));
+										has_status = v->VCCurrentOrder().ShouldStopAtStation(v, v->VCCurrentOrder().GetDestination().ToStationID(), v->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT));
 										break;
 
 									default:
@@ -752,7 +752,7 @@ void TraceRestrictProgram::Execute(const Train *v, const TraceRestrictProgramInp
 						const Order *o = nullptr;
 						switch (static_cast<TraceRestrictTargetDirectionCondAuxField>(item.GetAuxField())) {
 							case TRTDCAF_CURRENT_ORDER:
-								o = &(v->current_order);
+								o = &(v->VCCurrentOrder());
 								break;
 
 							case TRTDCAF_NEXT_ORDER:

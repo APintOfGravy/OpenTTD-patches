@@ -2186,22 +2186,22 @@ static void FormatString(StringBuilder builder, std::string_view str_arg, String
 					const Vehicle *v = Vehicle::GetIfValid(id);
 					if (v == nullptr) break;
 
-					if (!v->name.empty()) {
-						auto tmp_params = MakeReferenceParameters(v->name);
+					if (!v->VCName().empty()) {
+						auto tmp_params = MakeReferenceParameters(v->VCName());
 						GetStringWithArgs(builder, STR_JUST_RAW_STRING, tmp_params);
-					} else if (v->group_id != DEFAULT_GROUP && vehicle_names != 0 && v->type < VEH_COMPANY_END) {
+					} else if (v->VCGroupID() != DEFAULT_GROUP && vehicle_names != 0 && v->type < VEH_COMPANY_END) {
 						/* The vehicle has no name, but is member of a group, so print group name */
-						uint32_t group_name = v->group_id.base();
+						uint32_t group_name = v->VCGroupID().base();
 						if (_settings_client.gui.show_vehicle_group_hierarchy_name) group_name |= GROUP_NAME_HIERARCHY;
 						if (vehicle_names == 1) {
-							auto tmp_params = MakeParameters(group_name, v->unitnumber);
+							auto tmp_params = MakeParameters(group_name, v->VCUnitNumber());
 							GetStringWithArgs(builder, STR_FORMAT_GROUP_VEHICLE_NAME, tmp_params);
 						} else {
-							auto tmp_params = MakeParameters(group_name, STR_TRADITIONAL_TRAIN_NAME + v->type, v->unitnumber);
+							auto tmp_params = MakeParameters(group_name, STR_TRADITIONAL_TRAIN_NAME + v->type, v->VCUnitNumber());
 							GetStringWithArgs(builder, STR_FORMAT_GROUP_VEHICLE_NAME_LONG, tmp_params);
 						}
 					} else {
-						auto tmp_params = MakeParameters(v->unitnumber);
+						auto tmp_params = MakeParameters(v->VCUnitNumber());
 
 						StringID string_id;
 						if (v->type < VEH_COMPANY_END) {

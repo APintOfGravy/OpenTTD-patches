@@ -200,7 +200,7 @@ public:
 
 			/* add min/max speed penalties */
 			int min_speed = 0;
-			int max_veh_speed = std::min<int>(v->GetDisplayMaxSpeed(), v->current_order.GetMaxSpeed() * 2);
+			int max_veh_speed = std::min<int>(v->GetDisplayMaxSpeed(), v->VCCurrentOrder().GetMaxSpeed() * 2);
 			int max_speed = F.GetSpeedLimit(&min_speed);
 			if (max_speed < max_veh_speed) segment_cost += YAPF_TILE_LENGTH * (max_veh_speed - max_speed) * (4 + F.tiles_skipped) / max_veh_speed;
 			if (min_speed > max_veh_speed) segment_cost += YAPF_TILE_LENGTH * (min_speed - max_veh_speed);
@@ -279,17 +279,17 @@ public:
 	void SetDestination(const RoadVehicle *v)
 	{
 		auto set_trackdirs = [&]() {
-			DiagDirection dir = v->current_order.GetRoadVehTravelDirection();
+			DiagDirection dir = v->VCCurrentOrder().GetRoadVehTravelDirection();
 			this->dest_trackdirs = (dir == INVALID_DIAGDIR) ? INVALID_TRACKDIR_BIT : TrackdirToTrackdirBits(DiagDirToDiagTrackdir(dir));
 		};
-		if (v->current_order.IsType(OT_GOTO_STATION)) {
-			this->dest_station   = v->current_order.GetDestination().ToStationID();
+		if (v->VCCurrentOrder().IsType(OT_GOTO_STATION)) {
+			this->dest_station   = v->VCCurrentOrder().GetDestination().ToStationID();
 			set_trackdirs();
 			this->station_type   = v->IsBus() ? StationType::Bus : StationType::Truck;
 			this->dest_tile      = CalcClosestStationTile(this->dest_station, v->tile, this->station_type);
 			this->non_artic      = !v->HasArticulatedPart();
-		} else if (v->current_order.IsType(OT_GOTO_WAYPOINT)) {
-			this->dest_station   = v->current_order.GetDestination().ToStationID();
+		} else if (v->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT)) {
+			this->dest_station   = v->VCCurrentOrder().GetDestination().ToStationID();
 			set_trackdirs();
 			this->station_type   = StationType::RoadWaypoint;
 			this->dest_tile      = CalcClosestStationTile(this->dest_station, v->tile, this->station_type);
@@ -413,7 +413,7 @@ public:
 		 * However, when going to a station the (initial) destination
 		 * tile might not be a station, but a junction, in which case
 		 * this method forces the vehicle to jump in circles. */
-		if (tile == v->dest_tile && !v->current_order.IsType(OT_GOTO_STATION)) {
+		if (tile == v->dest_tile && !v->VCCurrentOrder().IsType(OT_GOTO_STATION)) {
 			/* choose diagonal trackdir reachable from enterdir */
 			return DiagDirToDiagTrackdir(enterdir);
 		}
@@ -454,7 +454,7 @@ public:
 				if (front == origin_vehicle) continue;
 
 				/* only consider vehicles going to the same station as us */
-				if (!front->current_order.IsType(OT_GOTO_STATION) || origin_vehicle->current_order.GetDestination() != front->current_order.GetDestination()) continue;
+				if (!front->VCCurrentOrder().IsType(OT_GOTO_STATION) || origin_vehicle->VCCurrentOrder().GetDestination() != front->VCCurrentOrder().GetDestination()) continue;
 
 				TileIndex ti = u->tile + TileOffsByDir(u->direction);
 

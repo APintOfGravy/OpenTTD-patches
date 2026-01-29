@@ -146,7 +146,7 @@ void MoveWaypointsToBaseStations()
 	}
 
 	for (Vehicle *v : Vehicle::IterateType(VEH_TRAIN)) {
-		UpdateWaypointOrder(&v->current_order);
+		UpdateWaypointOrder(&v->VCCurrentOrder());
 	}
 
 	ResetOldWaypoints();

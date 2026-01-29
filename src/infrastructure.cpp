@@ -141,7 +141,7 @@ static bool OrderDestinationIsAllowed(const Order *order, const Vehicle *v, Owne
 			break;
 		case OT_LOADING_ADVANCE:
 		case OT_LOADING:
-			dest_owner = Station::Get(v->last_station_visited)->owner;
+			dest_owner = Station::Get(v->VCLastStationVisited())->owner;
 			break;
 		default:
 			return true;
@@ -171,7 +171,7 @@ static void RemoveAndSellVehicle(Vehicle *v, bool give_money)
 	}
 
 	/* take special measures for trains, but not when sharing is disabled or when the train is a free wagon chain */
-	if (_settings_game.economy.infrastructure_sharing[VEH_TRAIN] && v->type == VEH_TRAIN && Train::From(v)->IsFrontEngine() && !Train::From(v)->IsVirtual()) {
+	if (_settings_game.economy.infrastructure_sharing[VEH_TRAIN] && v->type == VEH_TRAIN && Train::From(v)->IsFrontUnit() && !Train::From(v)->IsVirtual()) {
  		DeleteVisibleTrain(Train::From(v));
 	} else {
 		delete v;
@@ -250,7 +250,7 @@ bool CheckSharingChangePossible(VehicleType type, bool new_value)
 		}
 
 		/* Check current order */
-		if (!OrderDestinationIsAllowed(&v->current_order, v)) {
+		if (!OrderDestinationIsAllowed(&v->VCCurrentOrder(), v)) {
 			error_message = STR_CONFIG_SETTING_SHARING_ORDERS_TO_OTHERS;
 		}
 
@@ -329,11 +329,11 @@ void HandleSharingCompanyDeletion(Owner owner)
 			continue;
 		}
 		/* current order */
-		if (!OrderDestinationIsAllowed(&v->current_order, v, owner)) {
-			if (v->current_order.IsAnyLoadingType()) {
+		if (!OrderDestinationIsAllowed(&v->VCCurrentOrder(), v, owner)) {
+			if (v->VCCurrentOrder().IsAnyLoadingType()) {
 				v->LeaveStation();
 			} else {
-				v->current_order.MakeDummy();
+				v->VCCurrentOrder().MakeDummy();
 			}
 			SetWindowDirty(WC_VEHICLE_VIEW, v->index);
 		}

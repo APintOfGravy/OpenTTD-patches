@@ -229,7 +229,7 @@ static bool IsTrainUsableAsTemplateReplacementSource(const Train *t)
 	if (t->IsPrimaryVehicle() && t->IsStoppedInDepot() && t->GetNextUnit() == nullptr) {
 		if (t->GetNumOrders() != 0) return false;
 		if (t->IsOrderListShared()) return false;
-		if (t->group_id != DEFAULT_GROUP) return false;
+		if (t->VCGroupID() != DEFAULT_GROUP) return false;
 		return true;
 	}
 
@@ -317,7 +317,7 @@ uint CountTrainsNeedingTemplateReplacement(GroupID g_id, const TemplateVehicle *
 	if (tv == nullptr) return count;
 
 	for (const Train *t : Train::IterateFrontOnly()) {
-		if (t->IsPrimaryVehicle() && t->group_id == g_id && TrainTemplateDifference(t, tv) != TBTRDF_NONE) {
+		if (t->IsPrimaryVehicle() && t->VCGroupID() == g_id && TrainTemplateDifference(t, tv) != TBTRDF_NONE) {
 			count++;
 		}
 	}

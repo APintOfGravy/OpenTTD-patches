@@ -78,6 +78,7 @@
 #include "../timer/timer_game_tick.h"
 #include "../picker_func.h"
 #include "../pathfinder/water_regions.h"
+#include "../sl/vehicle_sl.h"
 
 
 #include "../sl/saveload_internal.h"
@@ -651,7 +652,7 @@ void IterateVehicleAndOrderListOrders(F func)
 		func(order);
 	});
 	for (Vehicle *v : Vehicle::IterateFrontOnly()) {
-		func(&(v->current_order));
+		func(&(v->VCCurrentOrder()));
 	}
 }
 
@@ -662,6 +663,32 @@ void IterateVehicleAndOrderListOrders(F func)
  */
 bool AfterLoadGame()
 {
+	for (Vehicle* v : Vehicle::Iterate())
+	{
+		if (_legacy_vsl_props.contains(v->index))
+		{
+			v->VCName() = _legacy_vsl_props[v->index].name;
+			v->VCDispatchRecords() = _legacy_vsl_props[v->index].dispatch_records;
+			v->VCCurrentOrderTime() = _legacy_vsl_props[v->index].current_order_time;
+			v->VCLatenessCounter() = _legacy_vsl_props[v->index].lateness_counter;
+			v->VCTimetableStart() = _legacy_vsl_props[v->index].timetable_start;
+			v->VCServiceInterval() = _legacy_vsl_props[v->index].service_interval;
+			v->VCCurRealOrderIndex() = _legacy_vsl_props[v->index].cur_real_order_index;
+			v->VCCurImplicitOrderIndex() = _legacy_vsl_props[v->index].cur_implicit_order_index;
+			v->VCCurTimetableOrderIndex() = _legacy_vsl_props[v->index].cur_timetable_order_index;
+			v->VCUnitNumber() = _legacy_vsl_props[v->index].unitnumber;
+			v->day_counter = _legacy_vsl_props[v->index].day_counter;
+			v->tick_counter = _legacy_vsl_props[v->index].tick_counter;
+			v->VCGroupID() = _legacy_vsl_props[v->index].group_id;
+			v->VCCurrentOrder() = _legacy_vsl_props[v->index].current_order;
+			v->VCCargoPayment() = _legacy_vsl_props[v->index].cargo_payment;
+			v->VCLastStationVisited() = _legacy_vsl_props[v->index].last_station_visited;
+			v->VCLastLoadingStation() = _legacy_vsl_props[v->index].last_loading_station;
+			v->VCLastLoadingTick() = _legacy_vsl_props[v->index].last_loading_tick;
+			v->trip_occupancy = _legacy_vsl_props[v->index].trip_occupancy;
+			v->VCCurrentLoadingTime() = _legacy_vsl_props[v->index].current_loading_time;
+		}
+	}
 	SetSignalHandlers();
 
 	const uint32_t map_size = Map::Size();
@@ -1072,8 +1099,8 @@ bool AfterLoadGame()
 
 	/* Fix the cache for cargo payments. */
 	for (CargoPayment *cp : CargoPayment::Iterate()) {
-		cp->front->cargo_payment = cp;
-		cp->current_station = cp->front->last_station_visited;
+		cp->front->VCCargoPayment() = cp;
+		cp->current_station = cp->front->VCLastStationVisited();
 	}
 
 	if (IsSavegameVersionBefore(SLV_WATER_TILE_TYPE) && SlXvIsFeatureMissing(XSLFI_WATER_TILE_TYPE)) {
@@ -2084,10 +2111,10 @@ bool AfterLoadGame()
 	if (IsSavegameVersionBefore(SLV_57)) {
 		/* Added a FIFO queue of vehicles loading at stations */
 		for (Vehicle *v : Vehicle::Iterate()) {
-			if ((v->type != VEH_TRAIN || Train::From(v)->IsFrontEngine()) &&  // for all locs
+			if ((v->type != VEH_TRAIN || Train::From(v)->IsFrontUnit()) &&  // for all locs
 					!v->vehstatus.Any({VehState::Stopped, VehState::Crashed}) && // not stopped or crashed
-					v->current_order.IsType(OT_LOADING)) {         // loading
-				Station::Get(v->last_station_visited)->loading_vehicles.push_back(v);
+					v->VCCurrentOrder().IsType(OT_LOADING)) {         // loading
+				Station::Get(v->VCLastStationVisited())->loading_vehicles.push_back(v);
 
 				/* The loading finished flag is *only* set when actually completely
 				 * finished. Because the vehicle is loading, it is not finished. */
@@ -2100,7 +2127,7 @@ bool AfterLoadGame()
 		for (Station *st : Station::Iterate()) {
 			st->loading_vehicles.erase(std::remove_if(st->loading_vehicles.begin(), st->loading_vehicles.end(),
 				[](Vehicle *v) {
-					return !v->current_order.IsType(OT_LOADING);
+					return !v->VCCurrentOrder().IsType(OT_LOADING);
 				}), st->loading_vehicles.end());
 		}
 	}
@@ -2223,12 +2250,12 @@ bool AfterLoadGame()
 		});
 
 		for (Vehicle *v : Vehicle::Iterate()) {
-			if (v->orders != nullptr && v->orders->GetFirstOrder() != nullptr && v->orders->GetFirstOrder()->IsType(OT_NOTHING)) {
-				v->orders->FreeChain();
-				v->orders = nullptr;
+			if (v->VCOrders() != nullptr && v->VCOrders()->GetFirstOrder() != nullptr && v->VCOrders()->GetFirstOrder()->IsType(OT_NOTHING)) {
+				v->VCOrders()->FreeChain();
+				v->VCOrders() = nullptr;
 			}
 
-			v->current_order.ConvertFromOldSavegame();
+			v->VCCurrentOrder().ConvertFromOldSavegame();
 			if (v->type == VEH_ROAD && v->IsPrimaryVehicle() && v->FirstShared() == v) {
 				for (Order *order : v->Orders()) order->SetNonStopType(ONSF_NO_STOP_AT_INTERMEDIATE_STATIONS);
 			}
@@ -2699,7 +2726,7 @@ bool AfterLoadGame()
 		for (DisasterVehicle *v : DisasterVehicle::Iterate()) {
 			if (v->subtype == 2 /* ST_SMALL_UFO */ && v->state != 0) {
 				const Vehicle *u = Vehicle::GetIfValid(v->dest_tile.base());
-				if (u == nullptr || u->type != VEH_ROAD || !RoadVehicle::From(u)->IsFrontEngine()) {
+				if (u == nullptr || u->type != VEH_ROAD || !RoadVehicle::From(u)->IsFrontUnit()) {
 					delete v;
 				}
 			}
@@ -2717,7 +2744,7 @@ bool AfterLoadGame()
 				 * assert() in Pool::GetNew() happy by calling CanAllocateItem(). */
 				static_assert(CargoPaymentPool::MAX_SIZE == VehiclePool::MAX_SIZE);
 				assert(CargoPayment::CanAllocateItem());
-				if (v->cargo_payment == nullptr) v->cargo_payment = new CargoPayment(v);
+				if (v->VCCargoPayment() == nullptr) v->VCCargoPayment() = new CargoPayment(v);
 			}
 		}
 	}
@@ -2877,11 +2904,11 @@ bool AfterLoadGame()
 	/* Wait counter and load/unload ticks got split. */
 	if (IsSavegameVersionBefore(SLV_136)) {
 		for (Aircraft *a : Aircraft::Iterate()) {
-			a->turn_counter = a->current_order.IsType(OT_LOADING) ? 0 : a->load_unload_ticks;
+			a->turn_counter = a->VCCurrentOrder().IsType(OT_LOADING) ? 0 : a->load_unload_ticks;
 		}
 
 		for (Train *t : Train::Iterate()) {
-			t->wait_counter = t->current_order.IsType(OT_LOADING) ? 0 : t->load_unload_ticks;
+			t->wait_counter = t->VCCurrentOrder().IsType(OT_LOADING) ? 0 : t->load_unload_ticks;
 		}
 	}
 
@@ -3137,7 +3164,7 @@ bool AfterLoadGame()
 		for (RoadVehicle *rv : RoadVehicle::Iterate()) {
 			if (rv->state == RVSB_IN_DEPOT || rv->state == RVSB_WORMHOLE) continue;
 
-			bool loading = rv->current_order.IsType(OT_LOADING) || rv->current_order.IsType(OT_LEAVESTATION);
+			bool loading = rv->VCCurrentOrder().IsType(OT_LOADING) || rv->VCCurrentOrder().IsType(OT_LEAVESTATION);
 			if (HasBit(rv->state, RVS_IN_ROAD_STOP)) {
 				extern const uint8_t _road_stop_stop_frame[];
 				SB(rv->state, RVS_ENTERED_STOP, 1, loading || rv->frame > _road_stop_stop_frame[rv->state - RVSB_IN_ROAD_STOP + (_settings_game.vehicle.road_side << RVS_DRIVE_SIDE)]);
@@ -3268,9 +3295,9 @@ bool AfterLoadGame()
 			if (!v->IsPrimaryVehicle()) continue;
 
 			/* Older versions are less strict with indices being in range and fix them on the fly */
-			if (v->cur_implicit_order_index >= v->GetNumOrders()) v->cur_implicit_order_index = 0;
+			if (v->VCCurImplicitOrderIndex() >= v->GetNumOrders()) v->VCCurImplicitOrderIndex() = 0;
 
-			v->cur_real_order_index = v->cur_implicit_order_index;
+			v->VCCurRealOrderIndex() = v->VCCurImplicitOrderIndex();
 			v->UpdateRealOrderIndex();
 		}
 	}
@@ -3407,7 +3434,7 @@ bool AfterLoadGame()
 	if (SlXvIsFeatureMissing(XSLFI_IMPROVED_BREAKDOWNS)) {
 		_settings_game.vehicle.improved_breakdowns = false;
 		for (Train *v : Train::Iterate()) {
-			if (v->IsFrontEngine()) {
+			if (v->IsFrontUnit()) {
 				if (v->breakdown_ctr == 1) SetBit(v->flags, VRF_BREAKDOWN_STOPPED);
 			} else if (v->IsEngine() || v->IsMultiheaded()) {
 				/** Non-front engines could have a reliability of 0.
@@ -3577,7 +3604,7 @@ bool AfterLoadGame()
 		bool roadside = _settings_game.vehicle.road_side == 1;
 		std::vector<uint> skip_frames;
 		for (RoadVehicle *v : RoadVehicle::IterateFrontOnly()) {
-			if (!v->IsFrontEngine()) continue;
+			if (!v->IsFrontUnit()) continue;
 			skip_frames.clear();
 			TileIndex prev_tile = v->tile;
 			uint prev_tile_skip = 0;
@@ -3742,24 +3769,24 @@ bool AfterLoadGame()
 		/* Convert timetable start from a date to an absolute tick in TimerGameTick::counter. */
 		for (Vehicle *v : Vehicle::Iterate()) {
 			/* If the start date is 0, the vehicle is not waiting to start and can be ignored. */
-			if (v->timetable_start == 0) continue;
+			if (v->VCTimetableStart() == 0) continue;
 
-			v->timetable_start += StateTicksDelta{_state_ticks.base() - (int64_t)_tick_counter};
+			v->VCTimetableStart() += StateTicksDelta{_state_ticks.base() - (int64_t)_tick_counter};
 		}
 	} else if (!SlXvIsFeaturePresent(XSLFI_TIMETABLES_START_TICKS, 3)) {
 		extern btree::btree_map<VehicleID, uint16_t> _old_timetable_start_subticks_map;
 
 		for (Vehicle *v : Vehicle::Iterate()) {
-			if (v->timetable_start == 0) continue;
+			if (v->VCTimetableStart() == 0) continue;
 
 			if (SlXvIsFeatureMissing(XSLFI_TIMETABLES_START_TICKS)) {
-				v->timetable_start.edit_base() *= DAY_TICKS;
+				v->VCTimetableStart().edit_base() *= DAY_TICKS;
 			}
 
-			v->timetable_start = DateTicksToStateTicks(EconTime::DateTicks{v->timetable_start.base()});
+			v->VCTimetableStart() = DateTicksToStateTicks(EconTime::DateTicks{v->VCTimetableStart().base()});
 
 			if (SlXvIsFeaturePresent(XSLFI_TIMETABLES_START_TICKS, 2, 2)) {
-				v->timetable_start += StateTicksDelta{_old_timetable_start_subticks_map[v->index]};
+				v->VCTimetableStart() += StateTicksDelta{_old_timetable_start_subticks_map[v->index]};
 			}
 		}
 
@@ -4051,14 +4078,14 @@ bool AfterLoadGame()
 	/* Use current order time to approximate last loading time */
 	if (IsSavegameVersionBefore(SLV_LAST_LOADING_TICK) && SlXvIsFeatureMissing(XSLFI_LAST_LOADING_TICK)) {
 		for (Vehicle *v : Vehicle::Iterate()) {
-			v->last_loading_tick = _state_ticks - v->current_order_time;
+			v->VCLastLoadingTick() = _state_ticks - v->VCCurrentOrderTime();
 		}
 	} else if (SlXvIsFeatureMissing(XSLFI_LAST_LOADING_TICK, 3)) {
 		const StateTicksDelta delta = StateTicksDelta{_state_ticks.base() - (int64_t)_scaled_tick_counter};
 		for (Vehicle *v : Vehicle::Iterate()) {
-			if (v->last_loading_tick != 0) {
-				if (SlXvIsFeaturePresent(XSLFI_LAST_LOADING_TICK, 1, 1)) v->last_loading_tick = StateTicks{v->last_loading_tick.base() * DayLengthFactor()};
-				v->last_loading_tick += delta;
+			if (v->VCLastLoadingTick() != 0) {
+				if (SlXvIsFeaturePresent(XSLFI_LAST_LOADING_TICK, 1, 1)) v->VCLastLoadingTick() = StateTicks{v->VCLastLoadingTick().base() * DayLengthFactor()};
+				v->VCLastLoadingTick() += delta;
 			}
 		}
 	}
@@ -4135,7 +4162,7 @@ bool AfterLoadGame()
 
 	if (SlXvIsFeatureMissing(XSLFI_TIMETABLE_EXTRA)) {
 		for (Vehicle *v : Vehicle::Iterate()) {
-			v->cur_timetable_order_index = v->GetNumManualOrders() > 0 ? v->cur_real_order_index : INVALID_VEH_ORDER_ID;
+			v->VCCurTimetableOrderIndex() = v->GetNumManualOrders() > 0 ? v->VCCurRealOrderIndex() : INVALID_VEH_ORDER_ID;
 		}
 		for (OrderBackup *bckup : OrderBackup::Iterate()) {
 			bckup->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
@@ -4157,7 +4184,7 @@ bool AfterLoadGame()
 
 	if (SlXvIsFeaturePresent(XSLFI_TRAIN_THROUGH_LOAD, 0, 1)) {
 		for (Vehicle *v : Vehicle::Iterate()) {
-			if (v->cargo_payment == nullptr) {
+			if (v->VCCargoPayment() == nullptr) {
 				v->vehicle_flags.Reset(VehicleFlag::CargoUnloading);
 			}
 		}

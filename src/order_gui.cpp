@@ -844,11 +844,11 @@ void DrawOrderString(const Vehicle *v, const Order *order, int order_index, int 
 
 	SpriteID sprite = rtl ? SPR_ARROW_LEFT : SPR_ARROW_RIGHT;
 	Dimension sprite_size = GetSpriteSize(sprite);
-	if (v->cur_real_order_index == order_index) {
+	if (v->VCCurRealOrderIndex() == order_index) {
 		/* Draw two arrows before the next real order. */
 		DrawSprite(sprite, PAL_NONE, rtl ? right -     sprite_size.width : left,                     y + ((int)GetCharacterHeight(FS_NORMAL) - (int)sprite_size.height) / 2);
 		DrawSprite(sprite, PAL_NONE, rtl ? right - 2 * sprite_size.width : left + sprite_size.width, y + ((int)GetCharacterHeight(FS_NORMAL) - (int)sprite_size.height) / 2);
-	} else if (v->cur_implicit_order_index == order_index) {
+	} else if (v->VCCurImplicitOrderIndex() == order_index) {
 		/* Draw one arrow before the next implicit order; the next real order will still get two arrows. */
 		DrawSprite(sprite, PAL_NONE, rtl ? right -     sprite_size.width : left,                     y + ((int)GetCharacterHeight(FS_NORMAL) - (int)sprite_size.height) / 2);
 	}
@@ -1153,8 +1153,8 @@ void DrawOrderString(const Vehicle *v, const Order *order, int order_index, int 
 				std::string schedule_str;
 				if (schedule_id != UINT16_MAX) {
 					bool have_name = false;
-					if (schedule_id < v->orders->GetScheduledDispatchScheduleCount()) {
-						const DispatchSchedule &ds = v->orders->GetDispatchScheduleByIndex(schedule_id);
+					if (schedule_id < v->VCOrders()->GetScheduledDispatchScheduleCount()) {
+						const DispatchSchedule &ds = v->VCOrders()->GetDispatchScheduleByIndex(schedule_id);
 						selected_schedule = &ds;
 						if (!ds.ScheduleName().empty()) {
 							schedule_str = ds.ScheduleName();
@@ -1372,7 +1372,7 @@ void DrawOrderString(const Vehicle *v, const Order *order, int order_index, int 
 
 	/* Check range for aircraft. */
 	if (v->type == VEH_AIRCRAFT && Aircraft::From(v)->GetRange() > 0 && order->IsGotoOrder()) {
-		const Order *next = v->orders->GetNext(order);
+		const Order *next = v->VCOrders()->GetNext(order);
 		if (GetOrderDistance(order, next, v) > Aircraft::From(v)->acache.cached_max_range_sqr) {
 			AppendStringInPlace(line, STR_ORDER_OUT_OF_RANGE);
 		}
@@ -1387,11 +1387,11 @@ void DrawOrderString(const Vehicle *v, const Order *order, int order_index, int 
 
 	if (v->vehicle_flags.Test(VehicleFlag::ScheduledDispatch) && order->IsScheduledDispatchOrder(false) && edge != 0) {
 		StringID str = (order->IsWaitTimetabled() || !timetable) ? STR_TIMETABLE_SCHEDULED_DISPATCH_ORDER : STR_TIMETABLE_SCHEDULED_DISPATCH_ORDER_NO_WAIT_TIME;
-		const DispatchSchedule &ds = v->orders->GetDispatchScheduleByIndex(order->GetDispatchScheduleIndex());
+		const DispatchSchedule &ds = v->VCOrders()->GetDispatchScheduleByIndex(order->GetDispatchScheduleIndex());
 		if (!ds.ScheduleName().empty()) {
 			AppendStringInPlace(line, str, STR_TIMETABLE_SCHEDULED_DISPATCH_ORDER_NAMED_SCHEDULE, ds.ScheduleName());
 		} else {
-			AppendStringInPlace(line, str, v->orders->GetScheduledDispatchScheduleCount() > 1 ? STR_TIMETABLE_SCHEDULED_DISPATCH_ORDER_SCHEDULE_INDEX : STR_EMPTY,
+			AppendStringInPlace(line, str, v->VCOrders()->GetScheduledDispatchScheduleCount() > 1 ? STR_TIMETABLE_SCHEDULED_DISPATCH_ORDER_SCHEDULE_INDEX : STR_EMPTY,
 					order->GetDispatchScheduleIndex() + 1);
 		}
 		edge = DrawString(rtl ? left : edge + 3, rtl ? edge - 3 : right, y, line, colour);
@@ -1927,11 +1927,11 @@ private:
 	void OrderClick_Skip()
 	{
 		/* Don't skip when there's nothing to skip */
-		if (_ctrl_pressed && this->vehicle->cur_implicit_order_index == this->OrderGetSel()) return;
+		if (_ctrl_pressed && this->vehicle->VCCurImplicitOrderIndex() == this->OrderGetSel()) return;
 		if (this->vehicle->GetNumOrders() <= 1) return;
 
 		Command<CMD_SKIP_TO_ORDER>::Post(_ctrl_pressed ? STR_ERROR_CAN_T_SKIP_TO_ORDER : STR_ERROR_CAN_T_SKIP_ORDER,
-				this->vehicle->tile, this->vehicle->index, _ctrl_pressed ? this->OrderGetSel() : ((this->vehicle->cur_implicit_order_index + 1) % this->vehicle->GetNumOrders()));
+				this->vehicle->tile, this->vehicle->index, _ctrl_pressed ? this->OrderGetSel() : ((this->vehicle->VCCurImplicitOrderIndex() + 1) % this->vehicle->GetNumOrders()));
 	}
 
 	/**
@@ -2638,7 +2638,7 @@ public:
 				y += line_height;
 
 				i++;
-				order = this->vehicle->orders->GetNextNoWrap(order);
+				order = this->vehicle->VCOrders()->GetNextNoWrap(order);
 			}
 
 			/* Reset counters for drawing the orders. */
@@ -2656,7 +2656,7 @@ public:
 			y += line_height;
 
 			i++;
-			order = this->vehicle->orders->GetNextNoWrap(order);
+			order = this->vehicle->VCOrders()->GetNextNoWrap(order);
 		}
 
 		if (this->vscroll->IsVisible(i)) {
@@ -2788,8 +2788,8 @@ public:
 
 				uint schedule_index = order->GetConditionDispatchScheduleID();
 				if (order != nullptr && order->IsType(OT_CONDITIONAL) && order->GetConditionVariable() == OCV_DISPATCH_SLOT && schedule_index != UINT16_MAX) {
-					if (schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount()) {
-						const DispatchSchedule &ds = this->vehicle->orders->GetDispatchScheduleByIndex(schedule_index);
+					if (schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount()) {
+						const DispatchSchedule &ds = this->vehicle->VCOrders()->GetDispatchScheduleByIndex(schedule_index);
 						if (!ds.ScheduleName().empty()) {
 							return ds.ScheduleName();
 						}
@@ -2818,8 +2818,8 @@ public:
 								} else {
 									uint schedule_index = order->GetConditionDispatchScheduleID();
 									if (order != nullptr && order->IsType(OT_CONDITIONAL) && order->GetConditionVariable() == OCV_DISPATCH_SLOT && schedule_index != UINT16_MAX) {
-										if (schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount()) {
-											const DispatchSchedule &ds = this->vehicle->orders->GetDispatchScheduleByIndex(schedule_index);
+										if (schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount()) {
+											const DispatchSchedule &ds = this->vehicle->VCOrders()->GetDispatchScheduleByIndex(schedule_index);
 											std::string_view name = ds.GetSupplementaryName(DispatchSchedule::SupplementaryNameType::RouteID, route_id);
 											if (!name.empty()) return std::string{name};
 										}
@@ -3255,10 +3255,10 @@ public:
 				int selected = this->vehicle->GetOrder(this->OrderGetSel())->GetConditionDispatchScheduleID();
 				if (selected == UINT16_MAX) selected = -1;
 
-				uint count = this->vehicle->orders->GetScheduledDispatchScheduleCount();
+				uint count = this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount();
 				DropDownList list;
 				for (uint i = 0; i < count; ++i) {
-					const DispatchSchedule &ds = this->vehicle->orders->GetDispatchScheduleByIndex(i);
+					const DispatchSchedule &ds = this->vehicle->VCOrders()->GetDispatchScheduleByIndex(i);
 					if (ds.ScheduleName().empty()) {
 						list.push_back(MakeDropDownListStringItem(GetString(STR_TIMETABLE_ASSIGN_SCHEDULE_ID, i + 1), i, false));
 					} else {
@@ -3286,8 +3286,8 @@ public:
 				const DispatchSchedule *ds = nullptr;
 				uint16_t slot_flags = 0;
 				uint schedule_index = order->GetConditionDispatchScheduleID();
-				if (schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount()) {
-					ds = &(this->vehicle->orders->GetDispatchScheduleByIndex(schedule_index));
+				if (schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount()) {
+					ds = &(this->vehicle->VCOrders()->GetDispatchScheduleByIndex(schedule_index));
 					for (const DispatchSlot &slot : ds->GetScheduledDispatch()) {
 						slot_flags |= slot.flags;
 					}
@@ -3392,7 +3392,7 @@ public:
 						if (ocv == OCV_COUNTER_VALUE && !_settings_client.gui.show_adv_tracerestrict_features) {
 							continue;
 						}
-						if ((ocv == OCV_DISPATCH_SLOT) && this->vehicle->orders->GetScheduledDispatchScheduleCount() == 0) {
+						if ((ocv == OCV_DISPATCH_SLOT) && this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() == 0) {
 							continue;
 						}
 					}
@@ -3420,8 +3420,8 @@ public:
 					const DispatchSchedule *ds = nullptr;
 					uint16_t slot_flags = 0;
 					uint schedule_index = o->GetConditionDispatchScheduleID();
-					if (schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount()) {
-						ds = &(this->vehicle->orders->GetDispatchScheduleByIndex(schedule_index));
+					if (schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount()) {
+						ds = &(this->vehicle->VCOrders()->GetDispatchScheduleByIndex(schedule_index));
 						for (const DispatchSlot &slot : ds->GetScheduledDispatch()) {
 							slot_flags |= slot.flags;
 						}
@@ -3768,8 +3768,8 @@ public:
 						const DispatchSchedule *ds = nullptr;
 						uint16_t slot_flags = 0;
 						uint schedule_index = o->GetConditionDispatchScheduleID();
-						if (schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount()) {
-							ds = &(this->vehicle->orders->GetDispatchScheduleByIndex(schedule_index));
+						if (schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount()) {
+							ds = &(this->vehicle->VCOrders()->GetDispatchScheduleByIndex(schedule_index));
 							for (const DispatchSlot &slot : ds->GetScheduledDispatch()) {
 								slot_flags |= slot.flags;
 							}

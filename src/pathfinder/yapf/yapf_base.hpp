@@ -129,7 +129,7 @@ public:
 		const bool destination_found = (this->best_dest_node != nullptr);
 
 		if (GetDebugLevel(DebugLevelID::yapf) >= 3) {
-			const UnitID veh_idx = (this->vehicle != nullptr) ? this->vehicle->unitnumber : 0;
+			const UnitID veh_idx = (this->vehicle != nullptr) ? this->vehicle->VCUnitNumber() : 0;
 			const char ttc = Yapf().TransportTypeChar();
 			const float cache_hit_ratio = (this->stats_cache_hits == 0) ? 0.0f : ((float)this->stats_cache_hits / (float)(this->stats_cache_hits + this->stats_cost_calcs) * 100.0f);
 			const int cost = destination_found ? this->best_dest_node->cost : -1;

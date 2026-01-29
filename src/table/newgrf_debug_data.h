@@ -200,10 +200,10 @@ class NIHVehicle : public NIHelper {
 
 		if (v->IsPrimaryVehicle()) {
 			output.Print("  Order indices: real: {}, implicit: {}, tt: {}, current type: {}",
-					v->cur_real_order_index, v->cur_implicit_order_index, v->cur_timetable_order_index, GetOrderTypeName(v->current_order.GetType()));
+					v->VCCurRealOrderIndex(), v->VCCurImplicitOrderIndex(), v->VCCurTimetableOrderIndex(), GetOrderTypeName(v->VCCurrentOrder().GetType()));
 			output.Print("  Current order time: ({}, {} mins), current loading time: ({}, {} mins)",
-					v->current_order_time, v->current_order_time / _settings_time.ticks_per_minute,
-					v->current_loading_time, v->current_loading_time / _settings_time.ticks_per_minute);
+					v->VCCurrentOrderTime(), v->VCCurrentOrderTime() / _settings_time.ticks_per_minute,
+					v->VCCurrentLoadingTime(), v->VCCurrentLoadingTime() / _settings_time.ticks_per_minute);
 		}
 		output.Print("  Speed: {}, sub-speed: {}, progress: {}, acceleration: {}",
 				v->cur_speed, v->subspeed, v->progress, v->acceleration);
@@ -219,13 +219,13 @@ class NIHVehicle : public NIHelper {
 					v->cargo.ActionCount(VehicleCargoList::MTA_TRANSFER), v->cargo.ActionCount(VehicleCargoList::MTA_DELIVER),
 					v->cargo.ActionCount(VehicleCargoList::MTA_KEEP), v->cargo.ActionCount(VehicleCargoList::MTA_LOAD));
 		}
-		if (BaseStation::IsValidID(v->last_station_visited)) {
-			output.Print("  V Last station visited: {}, {}", v->last_station_visited, BaseStation::Get(v->last_station_visited)->GetCachedName());
+		if (BaseStation::IsValidID(v->VCLastStationVisited())) {
+			output.Print("  V Last station visited: {}, {}", v->VCLastStationVisited(), BaseStation::Get(v->VCLastStationVisited())->GetCachedName());
 		}
-		if (BaseStation::IsValidID(v->last_loading_station)) {
-			output.Print("  V Last loading station: {}, {}", v->last_loading_station, BaseStation::Get(v->last_loading_station)->GetCachedName());
+		if (BaseStation::IsValidID(v->VCLastLoadingStation())) {
+			output.Print("  V Last loading station: {}, {}", v->VCLastLoadingStation(), BaseStation::Get(v->VCLastLoadingStation())->GetCachedName());
 			output.Print("  V Last loading tick: {} ({}, {} mins ago)",
-					v->last_loading_tick, _state_ticks - v->last_loading_tick, (_state_ticks - v->last_loading_tick).base() / _settings_time.ticks_per_minute);
+					v->VCLastLoadingTick(), _state_ticks - v->VCLastLoadingTick(), (_state_ticks - v->VCLastLoadingTick()).base() / _settings_time.ticks_per_minute);
 		}
 		if (v->IsGroundVehicle()) {
 			const GroundVehicleCache &gvc = *(v->GetGroundVehicleCache());
@@ -323,12 +323,12 @@ class NIHVehicle : public NIHelper {
 						case TRLIT_STATION: {
 							const StationID st = static_cast<StationID>(item.data_id);
 							output.buffer.format("station: {}, {}", st, BaseStation::IsValidID(st) ? BaseStation::Get(st)->GetCachedName() : "[invalid]");
-							if (t->current_order.ShouldStopAtStation(t->last_station_visited, st, Waypoint::GetIfValid(st) != nullptr)) {
+							if (t->VCCurrentOrder().ShouldStopAtStation(t->VCLastStationVisited(), st, Waypoint::GetIfValid(st) != nullptr)) {
 								extern int PredictStationStoppingLocation(const Train *v, const Order *order, int station_length, DestinationID dest);
-								int stop_position = PredictStationStoppingLocation(t, &(t->current_order), item.end - item.start, st);
+								int stop_position = PredictStationStoppingLocation(t, &(t->VCCurrentOrder()), item.end - item.start, st);
 								output.buffer.format(", stop_position: {}", item.start + stop_position);
 								print_braking_speed(item.start + stop_position, 0, item.z_pos);
-							} else if (t->current_order.IsType(OT_GOTO_WAYPOINT) && t->current_order.GetDestination() == st && t->current_order.GetWaypointFlags().Test(OrderWaypointFlag::Reverse)) {
+							} else if (t->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT) && t->VCCurrentOrder().GetDestination() == st && t->VCCurrentOrder().GetWaypointFlags().Test(OrderWaypointFlag::Reverse)) {
 								print_braking_speed(item.start + t->gcache.cached_total_length, 0, item.z_pos);
 							}
 							break;
@@ -468,7 +468,7 @@ class NIHVehicle : public NIHelper {
 				output.buffer.format("    {} [{}, {}, {}], {}, ",
 						info.id == v->index ? '*' : ' ', info.order_count, info.order_ticks, info.cumulative_ticks, info.id);
 				AppendStringInPlace(output.buffer, STR_VEHICLE_NAME, info.id);
-				output.buffer.format(", lateness: {}", Vehicle::Get(info.id)->lateness_counter);
+				output.buffer.format(", lateness: {}", Vehicle::Get(info.id)->VCLatenessCounter());
 				output.FinishPrint();
 			}
 		}
@@ -476,7 +476,7 @@ class NIHVehicle : public NIHelper {
 		if (v->HasUnbunchingOrder()) {
 			output.Print("  Unbunching state:");
 			for (const Vehicle *u = v->FirstShared(); u != nullptr; u = u->NextShared()) {
-				output.buffer.format("  {} {} (unit {}):", u == v ? '*' : ' ', u->index, u->unitnumber);
+				output.buffer.format("  {} {} (unit {}):", u == v ? '*' : ' ', u->index, u->VCUnitNumber());
 
 				if (u->unbunch_state == nullptr) {
 					output.buffer.append(" [NO DATA]");

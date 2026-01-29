@@ -7,9 +7,9 @@
 
 /** @file vehiclelist.cpp Lists of vehicles. */
 
-#include "stdafx.h"
+#include "depot_base.h"
 #include "train.h"
-#include "vehicle_func.h"
+#include "consist.h"
 #include "vehiclelist.h"
 #include "vehiclelist_func.h"
 #include "group.h"
@@ -78,21 +78,23 @@ void VehicleListIdentifier::fmt_format_value(format_target &output) const
 void BuildDepotVehicleList(VehicleType type, TileIndex tile, VehicleList *engines, VehicleList *wagons, bool individual_wagons)
 {
 	engines->clear();
-	if (wagons != nullptr && wagons != engines) wagons->clear();
+	wagons->clear();
 
-	for (Vehicle *v : VehiclesOnTile(tile, type)) {
+	Depot* depot = Depot::GetByTile(tile);
+
+	for (Consist* c : depot->vehicles)
+	{
+		Vehicle* v = c->FirstVehicle();
 		if (!v->IsInDepot()) continue;
 
-		if (type == VEH_TRAIN) {
-			const Train *t = Train::From(v);
-			if (t->IsArticulatedPart() || t->IsRearDualheaded()) continue;
-			if (wagons != nullptr && t->First()->IsFreeWagon()) {
-				if (individual_wagons || t->IsFreeWagon()) wagons->push_back(t);
-				continue;
-			}
+		if (c->powered_units.size() == 0)
+		{
+			wagons->emplace_back(v);
 		}
-
-		if (v->IsPrimaryVehicle()) engines->push_back(v);
+		else
+		{
+			engines->emplace_back(v);
+		}
 	}
 }
 
@@ -177,7 +179,7 @@ bool GenerateVehicleSortList(VehicleList *list, const VehicleListIdentifier &vli
 			if (vli.index != ALL_GROUP) {
 				for (const Vehicle *v : Vehicle::IterateTypeFrontOnly(vli.vtype)) {
 					if (!HasBit(v->subtype, GVSF_VIRTUAL) && v->IsPrimaryVehicle() &&
-							v->owner == vli.company && GroupIsInGroup(v->group_id, vli.ToGroupID())) {
+							v->owner == vli.company && GroupIsInGroup(v->VCGroupID(), vli.ToGroupID())) {
 						add_veh(v);
 					}
 				}

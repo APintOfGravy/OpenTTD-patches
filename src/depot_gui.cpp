@@ -8,6 +8,7 @@
 /** @file depot_gui.cpp The GUI for depots. */
 
 #include "stdafx.h"
+#include "consist.h"
 #include "train.h"
 #include "roadveh.h"
 #include "ship.h"
@@ -404,7 +405,7 @@ struct DepotWindow : Window {
 			Rect flag = r.WithWidth(this->flag_size.width, rtl).WithHeight(this->flag_size.height).Translate(0, diff_y);
 			DrawSpriteIgnorePadding((v->vehstatus.Test(VehState::Stopped)) ? SPR_FLAG_VEH_STOPPED : SPR_FLAG_VEH_RUNNING, PAL_NONE, flag, SA_CENTER);
 
-			DrawString(text, GetString(STR_JUST_COMMA, v->unitnumber), (v->max_age - DAYS_IN_LEAP_YEAR) >= v->age ? TC_BLACK : TC_RED);
+			DrawString(text, GetString(STR_JUST_COMMA, v->VCUnitNumber()), (v->max_age - DAYS_IN_LEAP_YEAR) >= v->age ? TC_BLACK : TC_RED);
 		}
 	}
 
@@ -445,24 +446,22 @@ struct DepotWindow : Window {
 
 		uint16_t rows_in_display = wid->current_y / wid->resize_y;
 
+		Depot* depot = Depot::GetByTile(TileIndex(this->window_number));
 		uint num = this->vscroll->GetPosition() * this->num_columns;
-		uint maxval = static_cast<uint>(std::min<size_t>(this->vehicle_list.size(), num + (rows_in_display * this->num_columns)));
+		uint maxval = static_cast<uint>(std::min<size_t>(depot->vehicles.size(), num + (rows_in_display * this->num_columns)));
+		auto it = depot->vehicles.begin();
 		for (; num < maxval; ir = ir.Translate(0, this->resize.step_height)) { // Draw the rows
 			Rect cell = ir; /* Keep track of horizontal cells */
 			for (uint i = 0; i < this->num_columns && num < maxval; i++, num++) {
 				/* Draw all vehicles in the current row */
-				const Vehicle *v = this->vehicle_list[num];
-				this->DrawVehicleInDepot(v, cell);
-				cell = cell.Translate(rtl ? -(int)this->resize.step_width : (int)this->resize.step_width, 0);
+				if (it != depot->vehicles.end())
+				{
+					const Vehicle *v = (*it)->FirstVehicle();
+					this->DrawVehicleInDepot(v, cell);
+					cell = cell.Translate(rtl ? -(int)this->resize.step_width : (int)this->resize.step_width, 0);
+					it++;
+				}
 			}
-		}
-
-		maxval = static_cast<uint>(std::min<size_t>(this->vehicle_list.size() + this->wagon_list.size(), (this->vscroll->GetPosition() * this->num_columns) + (rows_in_display * this->num_columns)));
-
-		/* Draw the train wagons without an engine in front. */
-		for (; num < maxval; num++, ir = ir.Translate(0, this->resize.step_height)) {
-			const Vehicle *v = this->wagon_list[num - this->vehicle_list.size()];
-			this->DrawVehicleInDepot(v, ir);
 		}
 	}
 
@@ -508,7 +507,8 @@ struct DepotWindow : Window {
 		int32_t row = this->vscroll->GetScrolledRowFromWidget(y, this, WID_D_MATRIX);
 		uint pos = (row * this->num_columns) + xt;
 
-		if (row == INT32_MAX || this->vehicle_list.size() + this->wagon_list.size() <= pos) {
+		Depot* depot = Depot::GetByTile(TileIndex(this->window_number));
+		if (row == INT32_MAX || depot->vehicles.size() <= pos) {
 			/* Clicking on 'line' / 'block' without a vehicle */
 			if (this->type == VEH_TRAIN) {
 				/* End the dragging */
@@ -521,16 +521,26 @@ struct DepotWindow : Window {
 		}
 
 		bool wagon = false;
-		if (this->vehicle_list.size() > pos) {
-			*veh = this->vehicle_list[pos];
+		if (depot->vehicles.size() > pos) {
+			uint i = 0;
+			for (auto c : depot->vehicles)
+			{
+				if (i == pos)
+				{
+					Train* first = Train::From(c->FirstVehicle());
+					*veh = first;
+					if (first->IsWagon())
+					{
+						/* free wagons don't have an initial loco. */
+						x -= ScaleSpriteTrad(VEHICLEINFO_FULL_VEHICLE_WIDTH);
+						wagon = true;
+					}
+					break;
+				}
+				i++;
+			}
 			/* Skip vehicles that are scrolled off the list */
 			if (this->type == VEH_TRAIN) x += this->hscroll->GetPosition();
-		} else {
-			pos -= (uint)this->vehicle_list.size();
-			*veh = this->wagon_list[pos];
-			/* free wagons don't have an initial loco. */
-			x -= ScaleSpriteTrad(VEHICLEINFO_FULL_VEHICLE_WIDTH);
-			wagon = true;
 		}
 
 		const Train *v = nullptr;
@@ -1091,6 +1101,7 @@ struct DepotWindow : Window {
 				new_vehicle_over = gdvp.head->index;
 			} else if (gdvp.wagon != nullptr && gdvp.head != gdvp.wagon &&
 					gdvp.wagon->index != this->sel &&
+					gdvp.wagon->Previous() != nullptr &&
 					gdvp.wagon->Previous()->index != this->sel) { // ..over an existing wagon.
 				new_vehicle_over = gdvp.wagon->index;
 			}

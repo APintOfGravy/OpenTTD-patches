@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 #include "../debug.h"
 #include "../vehicle_func.h"
+#include "../consist.h"
 #include "../train.h"
 #include "../roadveh.h"
 #include "../ship.h"
@@ -20,17 +21,18 @@
 #include "../company_func.h"
 #include "../disaster_vehicle.h"
 #include "../scope_info.h"
-#include "../string_func.h"
 #include "../error.h"
 #include "../strings_func.h"
-#include "../economy_base.h"
 #include "../event_logs.h"
 #include "../date_func.h"
+#include "../depot_map.h"
 #include "../3rdparty/cpp-btree/btree_map.h"
 #include "../3rdparty/robin_hood/robin_hood.h"
 #include "../core/format.hpp"
 
+#include "extended_ver_sl.h"
 #include "saveload.h"
+#include "saveload_types.h"
 #include "vehicle_sl.h"
 
 #include "table/strings.h"
@@ -54,7 +56,7 @@ void ConnectMultiheadedTrains()
 	}
 
 	for (Train *v : Train::Iterate()) {
-		if (v->IsFrontEngine() || v->IsFreeWagon()) {
+		if (v->IsFrontUnit() || v->IsFreeWagon()) {
 			/* Two ways to associate multiheaded parts to each other:
 			 * sequential-matching: Trains shall be arranged to look like <..>..<..>..<..>..
 			 * bracket-matching:    Free vehicle chains shall be arranged to look like ..<..<..>..<..>..>..
@@ -68,7 +70,7 @@ void ConnectMultiheadedTrains()
 			 *   This is why two matching strategies are needed.
 			 */
 
-			bool sequential_matching = v->IsFrontEngine();
+			bool sequential_matching = v->IsFrontUnit();
 
 			for (Train *u = v; u != nullptr; u = u->GetNextVehicle()) {
 				if (u->other_multiheaded_part != nullptr) continue; // we already linked this one
@@ -138,7 +140,7 @@ void ConvertOldMultiheadToNew()
 				switch (u->subtype) {
 					case 0: // TS_Front_Engine
 						if (rvi->railveh_type == RAILVEH_MULTIHEAD) u->SetMultiheaded();
-						u->SetFrontEngine();
+						u->SetFrontUnit();
 						u->SetEngine();
 						break;
 
@@ -198,9 +200,9 @@ void UpdateOldAircraft()
 			a->vehstatus.Reset(VehState::Stopped); // make airplane moving
 			UpdateAircraftCache(a);
 			a->cur_speed = a->vcache.cached_max_speed; // so aircraft don't have zero speed while in air
-			if (!a->current_order.IsType(OT_GOTO_STATION) && !a->current_order.IsType(OT_GOTO_DEPOT)) {
+			if (!a->VCCurrentOrder().IsType(OT_GOTO_STATION) && !a->VCCurrentOrder().IsType(OT_GOTO_DEPOT)) {
 				/* reset current order so aircraft doesn't have invalid "station-only" order */
-				a->current_order.MakeDummy();
+				a->VCCurrentOrder().MakeDummy();
 			}
 			a->state = FLYING;
 			AircraftNextAirportPos_and_Order(a); // move it to the entry point of the airport
@@ -220,9 +222,9 @@ void UpdateOldAircraft()
 	for (Station *st : Station::Iterate()) {
 		for (auto iter = st->loading_vehicles.begin(); iter != st->loading_vehicles.end(); /* nothing */) {
 			Vehicle *v = *iter;
-			if (v->type == VEH_AIRCRAFT && !v->current_order.IsType(OT_LOADING)) {
+			if (v->type == VEH_AIRCRAFT && !v->VCCurrentOrder().IsType(OT_LOADING)) {
 				iter = st->loading_vehicles.erase(iter);
-				delete v->cargo_payment;
+				delete v->VCCargoPayment();
 			} else {
 				++iter;
 			}
@@ -306,11 +308,81 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 				SlErrorCorrupt("Mixed virtual/non-virtual train consist");
 			}
 		}
-		if (v->NextShared() != nullptr) v->NextShared()->previous_shared = v;
+		if (_legacy_vsl_props[v->index].next_shared != nullptr)
+		{
+			v->next_shared = _legacy_vsl_props[v->index].next_shared;
+			v->NextShared()->previous_shared = v;
+		}
 
 		if (part_of_load) v->fill_percent_te_id = INVALID_TE_ID;
-		v->first = nullptr;
 		if (v->IsGroundVehicle()) v->GetGroundVehicleCache()->first_engine = EngineID::Invalid();
+	}
+
+	for (Vehicle *v : Vehicle::Iterate()) {
+		si_v = v;
+
+		/* Fill the first pointers */
+		if (v->Previous() == nullptr)
+		{
+			Consist* c = nullptr;
+			if (SlXvIsFeatureMissing(XSLFI_MAPLE_CONSISTS) && Consist::CanAllocateItem())
+			{
+				// uint16_t old_flags = v->vehicle_flags.base();
+				// uint16_t old_state = v->vehstatus.base();
+
+				c = new Consist(v);
+				c->name = _legacy_vsl_props[v->index].name;
+				c->dispatch_records = _legacy_vsl_props[v->index].dispatch_records;
+				c->current_order_time = _legacy_vsl_props[v->index].current_order_time;
+				c->lateness_counter = _legacy_vsl_props[v->index].lateness_counter;
+				c->timetable_start = _legacy_vsl_props[v->index].timetable_start;
+				c->service_interval = _legacy_vsl_props[v->index].service_interval;
+				c->cur_real_order_index = _legacy_vsl_props[v->index].cur_real_order_index;
+				c->cur_implicit_order_index = _legacy_vsl_props[v->index].cur_implicit_order_index;
+				c->cur_timetable_order_index = _legacy_vsl_props[v->index].cur_timetable_order_index;
+				c->unitnumber = _legacy_vsl_props[v->index].unitnumber;
+				c->day_counter = _legacy_vsl_props[v->index].day_counter;
+				c->tick_counter = _legacy_vsl_props[v->index].tick_counter;
+				c->group_id = _legacy_vsl_props[v->index].group_id;
+				c->current_order = _legacy_vsl_props[v->index].current_order;
+				c->orders = _legacy_vsl_props[v->index].orders;
+				c->cargo_payment = _legacy_vsl_props[v->index].cargo_payment;
+				c->last_station_visited = _legacy_vsl_props[v->index].last_station_visited;
+				c->last_loading_station = _legacy_vsl_props[v->index].last_loading_station;
+				c->last_loading_tick = _legacy_vsl_props[v->index].last_loading_tick;
+				c->trip_occupancy = _legacy_vsl_props[v->index].trip_occupancy;
+				c->current_loading_time = _legacy_vsl_props[v->index].current_loading_time;
+
+				/* Bit masks. 1 indicates a flag position we still use. 0 indicates a flag position we don't use or have repurposed. */
+				/* If a number is 0, the VehicleFlag/ConsistFlag in that position will be disabled. If it's 1, it will be left alone. */
+				// int v_flag_bitmask = 0b011000000000000001;
+				// int c_flag_bitmask = 0b110111111111111111;
+				// c->consist_flags = ConsistFlags((old_flags & c_flag_bitmask));
+				// int v_state_bitmask = 0b1111111;
+				// int c_state_bitmask = 0b1111111;
+				// c->status = ConsistState((old_state & c_state_bitmask));
+
+				for (Vehicle *u = v; u != nullptr; u = u->Next())
+				{
+					// u->vehicle_flags = VehicleFlags((u->vehicle_flags.base() & v_flag_bitmask));
+					// u->vehstatus = VehState((u->vehstatus.base() & v_state_bitmask));
+				}
+			}
+		}
+
+		_legacy_vsl_props.erase(v->index);
+	}
+
+	if (SlXvIsFeatureMissing(XSLFI_MAPLE_CONSISTS) && Consist::CanAllocateItem())
+	{
+		for (Consist* c : Consist::Iterate())
+		{
+			if (_legacy_vsl_props[c->FirstVehicle()->index].next_shared != nullptr)
+			{
+				c->next_shared = _legacy_vsl_props[c->FirstVehicle()->index].next_shared->consist;
+				_legacy_vsl_props[c->FirstVehicle()->index].next_shared->consist->previous_shared = c;
+			};
+		}
 	}
 
 	/* AfterLoadVehicles may also be called in case of NewGRF reload, in this
@@ -341,12 +413,12 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 					 * allowed in these savegames matches the number of OrderLists. As
 					 * such each vehicle can get an OrderList and it will (still) fit. */
 					assert(OrderList::CanAllocateItem());
-					v->orders = mapping_order_list = new OrderList(old_orders, v);
+					v->VCOrders() = mapping_order_list = new OrderList(old_orders, v);
 				} else {
-					v->orders = mapping_order_list;
+					v->VCOrders() = mapping_order_list;
 					/* For old games (case a) we must create the shared vehicle chain */
 					if (IsSavegameVersionBefore(SLV_5, 2)) {
-						v->AddToShared(v->orders->GetFirstSharedVehicle());
+						v->AddToShared(v->VCOrders()->GetFirstSharedVehicle());
 					}
 				}
 			}
@@ -355,9 +427,9 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 		} else {
 			for (Vehicle *v : Vehicle::Iterate()) {
 				si_v = v;
-				if (v->orders != nullptr && v->PreviousShared() == nullptr) {
+				if (v->VCOrders() != nullptr && v->PreviousShared() == nullptr) {
 					/* OrderList was saved as such, only recalculate not saved values */
-					v->orders->Initialize(v);
+					v->VCOrders()->Initialize(v);
 				}
 			}
 		}
@@ -368,7 +440,6 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 		/* Fill the first pointers */
 		if (v->Previous() == nullptr) {
 			for (Vehicle *u = v; u != nullptr; u = u->Next()) {
-				u->first = v;
 			}
 		}
 	}
@@ -378,13 +449,13 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 			/* Before 105 there was no order for shared orders, thus it messed up horribly */
 			for (Vehicle *v : Vehicle::Iterate()) {
 				si_v = v;
-				if (v->First() != v || v->orders != nullptr || v->previous_shared != nullptr || v->next_shared == nullptr) continue;
+				if (v->First() != v || v->VCOrders() != nullptr || v->previous_shared != nullptr || v->next_shared == nullptr) continue;
 
 				/* As above, allocating OrderList here is safe. */
 				assert(OrderList::CanAllocateItem());
-				v->orders = new OrderList(nullptr, v);
+				v->VCOrders() = new OrderList(nullptr, v);
 				for (Vehicle *u = v; u != nullptr; u = u->next_shared) {
-					u->orders = v->orders;
+					u->VCOrders() = v->VCOrders();
 				}
 			}
 		}
@@ -395,7 +466,7 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 				si_v = rv;
 				if (rv->subtype == 0) {
 					/* The road vehicle is at the front. */
-					rv->SetFrontEngine();
+					rv->SetFrontUnit();
 				} else if (rv->subtype == 1) {
 					/* The road vehicle is an articulated part. */
 					rv->subtype = 0;
@@ -411,8 +482,8 @@ void AfterLoadVehiclesPhase1(bool part_of_load)
 			for (Vehicle *v : Vehicle::Iterate()) {
 				si_v = v;
 				if (!v->IsPrimaryVehicle() && v->type != VEH_DISASTER) {
-					v->current_order.Free();
-					v->unitnumber = 0;
+					v->VCCurrentOrder().Free();
+					v->VCUnitNumber() = 0;
 				}
 			}
 		}
@@ -482,16 +553,23 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 		}
 	);
 
-	for (Vehicle *v : Vehicle::IterateFrontOnly()) {
+	for (Consist* c : Consist::Iterate()) {
+		Vehicle* v = c->FirstVehicle();
 		si_v = v;
 		assert(v->First() != nullptr);
 
+		if (v->consist == nullptr) continue;
 		v->trip_occupancy = CalcPercentVehicleFilled(v, nullptr);
+
+		if (IsDepotTile(v->tile))
+		{
+
+		}
 
 		switch (v->type) {
 			case VEH_TRAIN: {
 				Train *t = Train::From(v);
-				if (t->IsFrontEngine() || t->IsFreeWagon()) {
+				if (t->IsFrontUnit() || t->IsFreeWagon()) {
 					t->gcache.last_speed = t->cur_speed; // update displayed train speed
 					t->ConsistChanged(CCF_SAVELOAD);
 				}
@@ -500,7 +578,7 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 
 			case VEH_ROAD: {
 				RoadVehicle *rv = RoadVehicle::From(v);
-				if (rv->IsFrontEngine()) {
+				if (rv->IsFrontUnit()) {
 					rv->gcache.last_speed = rv->cur_speed; // update displayed road vehicle speed
 
 					rv->roadtype = Engine::Get(rv->engine_type)->VehInfo<RoadVehicleInfo>().roadtype;
@@ -544,7 +622,7 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 		for (Train *t : Train::IterateFrontOnly()) {
 			si_v = t;
 			if (t->IsVirtual()) {
-				t->unitnumber = 0;
+				t->VCUnitNumber() = 0;
 				delete t;
 			}
 		}
@@ -556,7 +634,7 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 			si_v = v;
 			if (v->type == VEH_TRAIN) {
 				Train *t = Train::From(v);
-				if (!t->IsFrontEngine()) {
+				if (!t->IsFrontUnit()) {
 					if (t->IsEngine()) t->vehstatus.Set(VehState::Stopped);
 					/* cur_speed is now relevant for non-front parts - nonzero breaks
 					 * moving-wagons-inside-depot- and autoreplace- code */
@@ -610,7 +688,7 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 				auto *dv = DisasterVehicle::From(v);
 				if (dv->subtype == ST_SMALL_UFO && dv->state != 0) {
 					RoadVehicle *u = RoadVehicle::GetIfValid(v->dest_tile.base());
-					if (u != nullptr && u->IsFrontEngine()) {
+					if (u != nullptr && u->IsFrontUnit()) {
 						/* Delete UFO targeting a vehicle which is already a target. */
 						if (!SetDisasterVehicleTargetingVehicle(u->index, dv->index)) {
 							delete v;
@@ -624,12 +702,9 @@ void AfterLoadVehiclesPhase2(bool part_of_load)
 			default: break;
 		}
 
-		if (part_of_load && v->unitnumber != 0) {
-			if (v->IsPrimaryVehicle()) {
-				Company::Get(v->owner)->freeunits[v->type].UseID(v->unitnumber);
-			} else {
-				v->unitnumber = 0;
-			}
+		if (part_of_load && v->VCUnitNumber() != 0)
+		{
+			Company::Get(v->owner)->freeunits[v->type].UseID(v->VCUnitNumber());
 		}
 
 		v->UpdateDeltaXY();
@@ -657,7 +732,7 @@ void AfterLoadVehiclesRemoveAnyFoundInvalid()
 }
 
 bool TrainController(Train *v, Vehicle *nomove, bool reverse = true); // From train_cmd.cpp
-void ReverseTrainDirection(Train *v);
+void FlipTrainDirection(Train *v);
 void ReverseTrainSwapVeh(Train *v, int l, int r);
 
 /** Fixup old train spacing. */
@@ -682,7 +757,7 @@ void FixupTrainLengths()
 					if (!TrainController(u, next, false)) break;
 				}
 
-				if (next != nullptr && done < diff && u->IsFrontEngine()) {
+				if (next != nullptr && done < diff && u->IsFrontUnit()) {
 					/* Pulling the front vehicle forwards failed, we either encountered a dead-end
 					 * or a red signal. To fix this, we try to move the whole train the required
 					 * space backwards and re-do the fix up of the front vehicle. */
@@ -825,16 +900,15 @@ struct VehicleOrderExtraDataStructHandler final : public TypedSaveLoadStructHand
 	}
 
 	void Save(Vehicle *v) const override
-	{
-		if (!v->current_order.extra) return;
-
-		SlObjectSaveFiltered(v->current_order.extra.get(), this->GetLoadDescription());
-	}
+	{}
 
 	void Load(Vehicle *v) const override
 	{
-		v->current_order.AllocExtraInfo();
-		SlObjectLoadFiltered(v->current_order.extra.get(), this->GetLoadDescription());
+		if (SlXvIsFeatureMissing(XSLFI_MAPLE_CONSISTS))
+		{
+			_legacy_vsl_props[v->index].current_order.AllocExtraInfo();
+			SlObjectLoadFiltered(_legacy_vsl_props[v->index].current_order.extra.get(), this->GetLoadDescription());
+		}
 	}
 };
 
@@ -856,15 +930,15 @@ struct VehicleUnbunchStateStructHandler final : public TypedSaveLoadStructHandle
 
 	void Save(Vehicle *v) const override
 	{
-		if (v->unbunch_state != nullptr) {
-			SlObjectSaveFiltered(v->unbunch_state.get(), this->GetLoadDescription());
-		}
 	}
 
 	void Load(Vehicle *v) const override
 	{
-		v->unbunch_state.reset(new VehicleUnbunchState());
-		SlObjectLoadFiltered(v->unbunch_state.get(), this->GetLoadDescription());
+		if (SlXvIsFeatureMissing(XSLFI_MAPLE_CONSISTS))
+		{
+			v->unbunch_state.reset(new VehicleUnbunchState());
+			SlObjectLoadFiltered(v->unbunch_state.get(), this->GetLoadDescription());
+		}
 	}
 };
 
@@ -1015,10 +1089,18 @@ void DispatchRecordsStructHandlerBase::LoadDispatchRecords(btree::btree_map<uint
 }
 
 struct VehicleDispatchRecordsStructHandlerBase final : public DispatchRecordsStructHandlerBase {
-	void Save(void *object) const override { this->SaveDispatchRecords(static_cast<Vehicle *>(object)->dispatch_records); }
+	void Save(void *object) const override {}
 
-	void Load(void *object) const override { this->LoadDispatchRecords(static_cast<Vehicle *>(object)->dispatch_records); }
+	void Load(void *object) const override
+	{
+		if (SlXvIsFeatureMissing(XSLFI_MAPLE_CONSISTS))
+		{
+			this->LoadDispatchRecords(static_cast<Vehicle *>(object)->VCDispatchRecords());
+		}
+	}
 };
+
+LegacyVSLProps _cur_vsl_props = {};
 
 /**
  * Make it possible to make the saveload tables "friends" of other classes.
@@ -1032,10 +1114,10 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("subtype",                        SLE_VAR(Vehicle, subtype,                   SLE_UINT8)),
 
 		NSL("next",                           SLE_REF(Vehicle, next,                      REF_VEHICLE_OLD)),
-		NSL("name",                       SLE_CONDVAR(Vehicle, name,                      SLE_CNAME,                  SL_MIN_VERSION, SLV_84)),
-		NSL("name",                       SLE_CONDSTR(Vehicle, name,                      SLE_STR | SLF_ALLOW_CONTROL, 0, SLV_84, SL_MAX_VERSION)),
-		NSL("unitnumber",                 SLE_CONDVAR(Vehicle, unitnumber,                SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_8)),
-		NSL("unitnumber",                 SLE_CONDVAR(Vehicle, unitnumber,                SLE_UINT16,                 SLV_8, SL_MAX_VERSION)),
+		NSL("name",                      SLEG_CONDVAR(_cur_vsl_props.name,                      SLE_CNAME,                  SL_MIN_VERSION, SLV_84)),
+		NSL("name",                      SLEG_CONDSTR(_cur_vsl_props.name,                      SLE_STR | SLF_ALLOW_CONTROL, 0, SLV_84, SL_MAX_VERSION)),
+		NSL("unitnumber",                SLEG_CONDVAR(_cur_vsl_props.unitnumber,                SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_8)),
+		NSL("unitnumber",                SLEG_CONDVAR(_cur_vsl_props.unitnumber,                SLE_UINT16,                 SLV_8, SL_MAX_VERSION)),
 		NSL("owner",                          SLE_VAR(Vehicle, owner,                     SLE_UINT8)),
 		NSL("tile",                       SLE_CONDVAR(Vehicle, tile,                      SLE_FILE_U16 | SLE_VAR_U32, SL_MIN_VERSION, SLV_6)),
 		NSL("tile",                       SLE_CONDVAR(Vehicle, tile,                      SLE_UINT32,                 SLV_6, SL_MAX_VERSION)),
@@ -1063,9 +1145,9 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("progress",                       SLE_VAR(Vehicle, progress,                  SLE_UINT8)),
 
 		NSL("vehstatus",                      SLE_VAR(Vehicle, vehstatus,                 SLE_UINT8)),
-		NSL("last_station_visited",       SLE_CONDVAR(Vehicle, last_station_visited,      SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_5)),
-		NSL("last_station_visited",       SLE_CONDVAR(Vehicle, last_station_visited,      SLE_UINT16,                 SLV_5, SL_MAX_VERSION)),
-		NSL("last_loading_station",     SLE_CONDVAR_X(Vehicle, last_loading_station,      SLE_UINT16,                 SLV_182, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_OR, XSLFI_CHILLPP, SL_CHILLPP_232))),
+		NSL("last_station_visited",      SLEG_CONDVAR(_cur_vsl_props.last_station_visited,      SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_5)),
+		NSL("last_station_visited",      SLEG_CONDVAR(_cur_vsl_props.last_station_visited,      SLE_UINT16,                 SLV_5, SL_MAX_VERSION)),
+		NSL("last_loading_station",    SLEG_CONDVAR_X(_cur_vsl_props.last_loading_station,      SLE_UINT16,                 SLV_182, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_OR, XSLFI_CHILLPP, SL_CHILLPP_232))),
 
 		NSL("cargo_type",                     SLE_VAR(Vehicle, cargo_type,                SLE_UINT8)),
 		NSL("cargo_subtype",              SLE_CONDVAR(Vehicle, cargo_subtype,             SLE_UINT8,                  SLV_35, SL_MAX_VERSION)),
@@ -1081,8 +1163,8 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("cargo.action_counts",        SLE_CONDARR(Vehicle, cargo.action_counts,       SLE_UINT, VehicleCargoList::NUM_MOVE_TO_ACTION, SLV_181, SL_MAX_VERSION)),
 		NSL("cargo_age_counter",          SLE_CONDVAR(Vehicle, cargo_age_counter,         SLE_UINT16,                 SLV_162, SL_MAX_VERSION)),
 
-		NSL("day_counter",                    SLE_VAR(Vehicle, day_counter,               SLE_UINT8)),
-		NSL("tick_counter",                   SLE_VAR(Vehicle, tick_counter,              SLE_UINT8)),
+		NSL("day_counter",                   SLEG_VAR(_cur_vsl_props.day_counter,               SLE_UINT8)),
+		NSL("tick_counter",                  SLEG_VAR(_cur_vsl_props.tick_counter,              SLE_UINT8)),
 		NSL("running_ticks",            SLE_CONDVAR_X(Vehicle, running_ticks,             SLE_FILE_U8  | SLE_VAR_U16, SLV_88, SL_MAX_VERSION, SlXvFeatureTest([](uint16_t version, bool version_in_range, const std::array<uint16_t, XSLFI_SIZE> &feature_versions) -> bool {
 			return version_in_range && !(SlXvIsFeaturePresent(feature_versions, XSLFI_SPRINGPP, 3) || SlXvIsFeaturePresent(feature_versions, XSLFI_JOKERPP) || SlXvIsFeaturePresent(feature_versions, XSLFI_CHILLPP) || SlXvIsFeaturePresent(feature_versions, XSLFI_VARIABLE_DAY_LENGTH, 2));
 		}))),
@@ -1090,44 +1172,44 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 			return version_in_range && (SlXvIsFeaturePresent(feature_versions, XSLFI_SPRINGPP, 2) || SlXvIsFeaturePresent(feature_versions, XSLFI_JOKERPP) || SlXvIsFeaturePresent(feature_versions, XSLFI_CHILLPP) || SlXvIsFeaturePresent(feature_versions, XSLFI_VARIABLE_DAY_LENGTH, 2));
 		}))),
 
-		NSL("cur_implicit_order_index",       SLE_VAR(Vehicle, cur_implicit_order_index,   SLE_VEHORDERID)),
-		NSL("cur_real_order_index",       SLE_CONDVAR(Vehicle, cur_real_order_index,       SLE_VEHORDERID,            SLV_158, SL_MAX_VERSION)),
-		NSL("cur_timetable_order_index", SLE_CONDVAR_X(Vehicle, cur_timetable_order_index, SLE_VEHORDERID,            SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA))),
+		NSL("cur_implicit_order_index",        SLEG_VAR(_cur_vsl_props.cur_implicit_order_index,   SLE_VEHORDERID)),
+		NSL("cur_real_order_index",        SLEG_CONDVAR(_cur_vsl_props.cur_real_order_index,       SLE_VEHORDERID,            SLV_158, SL_MAX_VERSION)),
+		NSL("cur_timetable_order_index", SLEG_CONDVAR_X(_cur_vsl_props.cur_timetable_order_index, SLE_VEHORDERID,            SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA))),
 		/* num_orders is now part of OrderList and is not saved but counted */
 		NSL("",                          SLE_CONDNULL(1,                                                              SL_MIN_VERSION, SLV_105)),
 
 		/* This next line is for version 4 and prior compatibility.. it temporarily reads
 		 type and flags (which were both 4 bits) into type. Later on this is
 		 converted correctly */
-		NSL("current_order.type",         SLE_CONDVAR(Vehicle, current_order.type,        SLE_UINT8,                  SL_MIN_VERSION, SLV_5)),
-		NSL("current_order.dest",         SLE_CONDVAR(Vehicle, current_order.dest,        SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_5)),
+		NSL("current_order.type",         SLEG_CONDVAR(_cur_vsl_props.current_order.type,        SLE_UINT8,                  SL_MIN_VERSION, SLV_5)),
+		NSL("current_order.dest",         SLEG_CONDVAR(_cur_vsl_props.current_order.dest,        SLE_FILE_U8  | SLE_VAR_U16, SL_MIN_VERSION, SLV_5)),
 
 		/* Orders for version 5 and on */
-		NSL("current_order.type",         SLE_CONDVAR(Vehicle, current_order.type,        SLE_UINT8,                  SLV_5, SL_MAX_VERSION)),
-		NSL("current_order.flags",      SLE_CONDVAR_X(Vehicle, current_order.flags,       SLE_FILE_U8 | SLE_VAR_U16,  SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 0, 0))),
-		NSL("current_order.flags",      SLE_CONDVAR_X(Vehicle, current_order.flags,       SLE_UINT16,                 SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 1))),
-		NSL("current_order.dest",         SLE_CONDVAR(Vehicle, current_order.dest,        SLE_UINT16,                 SLV_5, SL_MAX_VERSION)),
+		NSL("current_order.type",         SLEG_CONDVAR(_cur_vsl_props.current_order.type,        SLE_UINT8,                  SLV_5, SL_MAX_VERSION)),
+		NSL("current_order.flags",      SLEG_CONDVAR_X(_cur_vsl_props.current_order.flags,       SLE_FILE_U8 | SLE_VAR_U16,  SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 0, 0))),
+		NSL("current_order.flags",      SLEG_CONDVAR_X(_cur_vsl_props.current_order.flags,       SLE_UINT16,                 SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 1))),
+		NSL("current_order.dest",         SLEG_CONDVAR(_cur_vsl_props.current_order.dest,        SLE_UINT16,                 SLV_5, SL_MAX_VERSION)),
 
 		/* Refit in current order */
-		NSL("current_order.refit_cargo",  SLE_CONDVAR(Vehicle, current_order.refit_cargo, SLE_UINT8,                  SLV_36, SL_MAX_VERSION)),
-		NSL("", SLE_CONDNULL(1,                                                                                       SLV_36, SLV_182)), // refit_subtype
+		NSL("current_order.refit_cargo",  SLEG_CONDVAR(_cur_vsl_props.current_order.refit_cargo, SLE_UINT8,                  SLV_36, SL_MAX_VERSION)),
+		NSL("", SLEG_CONDNULL(1,                                                                                       SLV_36, SLV_182)), // refit_subtype
 
 		/* Timetable in current order */
-		NSL("current_order.wait_time",  SLE_CONDVAR_X(Vehicle, current_order.wait_time,   SLE_FILE_U16 | SLE_VAR_U32, SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
-		NSL("current_order.wait_time",  SLE_CONDVAR_X(Vehicle, current_order.wait_time,   SLE_UINT32,                 SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
-		NSL("current_order.travel_time",SLE_CONDVAR_X(Vehicle, current_order.travel_time, SLE_FILE_U16 | SLE_VAR_U32, SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
-		NSL("current_order.travel_time",SLE_CONDVAR_X(Vehicle, current_order.travel_time, SLE_UINT32,                 SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
-		NSL("current_order.max_speed",    SLE_CONDVAR(Vehicle, current_order.max_speed,   SLE_UINT16,                 SLV_174, SL_MAX_VERSION)),
+		NSL("current_order.wait_time",  SLEG_CONDVAR_X(_cur_vsl_props.current_order.wait_time,   SLE_FILE_U16 | SLE_VAR_U32, SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
+		NSL("current_order.wait_time",  SLEG_CONDVAR_X(_cur_vsl_props.current_order.wait_time,   SLE_UINT32,                 SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
+		NSL("current_order.travel_time",SLEG_CONDVAR_X(_cur_vsl_props.current_order.travel_time, SLE_FILE_U16 | SLE_VAR_U32, SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
+		NSL("current_order.travel_time",SLEG_CONDVAR_X(_cur_vsl_props.current_order.travel_time, SLE_UINT32,                 SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
+		NSL("current_order.max_speed",    SLEG_CONDVAR(_cur_vsl_props.current_order.max_speed,   SLE_UINT16,                 SLV_174, SL_MAX_VERSION)),
 
 		NSLT_STRUCT<VehicleOrderExtraDataStructHandler>("current_order.extra"),
 
-		NSL("timetable_start",          SLE_CONDVAR_X(Vehicle, timetable_start,           SLE_FILE_I32 | SLE_VAR_I64, SLV_129, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLES_START_TICKS, 0, 2))),
-		NSL("timetable_start",          SLE_CONDVAR_X(Vehicle, timetable_start,           SLE_INT64,                  SLV_129, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLES_START_TICKS, 3))),
+		NSL("timetable_start",         SLEG_CONDVAR_X(_cur_vsl_props.timetable_start,           SLE_FILE_I32 | SLE_VAR_I64, SLV_129, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLES_START_TICKS, 0, 2))),
+		NSL("timetable_start",         SLEG_CONDVAR_X(_cur_vsl_props.timetable_start,           SLE_INT64,                  SLV_129, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLES_START_TICKS, 3))),
 		NSL("",                        SLEG_CONDVAR_X(_old_timetable_start_subticks,      SLE_UINT16,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLES_START_TICKS, 2, 2))),
 
 		NSL("orders",                    SLEG_CONDVAR(_old_order_item_ref,                SLE_FILE_U16 | SLE_VAR_U32, SL_MIN_VERSION, SLV_69)),
 		NSL("orders",                    SLEG_CONDVAR(_old_order_item_ref,                SLE_UINT32,                 SLV_69, SLV_105)),
-		NSL("orders",                     SLE_CONDREF(Vehicle, orders,                    REF_ORDERLIST,              SLV_105, SL_MAX_VERSION)),
+		NSL("orders",                    SLEG_CONDREF(_cur_vsl_props.orders,                    REF_ORDERLIST,              SLV_105, SL_MAX_VERSION)),
 
 		NSL("age",                        SLE_CONDVAR(Vehicle, age,                       SLE_FILE_U16 | SLE_VAR_I32, SL_MIN_VERSION, SLV_31)),
 		NSL("age",                        SLE_CONDVAR(Vehicle, age,                       SLE_INT32,                  SLV_31, SL_MAX_VERSION)),
@@ -1137,9 +1219,9 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("date_of_last_service",       SLE_CONDVAR(Vehicle, date_of_last_service,      SLE_FILE_U16 | SLE_VAR_I32, SL_MIN_VERSION, SLV_31)),
 		NSL("date_of_last_service",       SLE_CONDVAR(Vehicle, date_of_last_service,      SLE_INT32,                  SLV_31, SL_MAX_VERSION)),
 		NSL("date_of_last_service_newgrf",SLE_CONDVAR_X(Vehicle, date_of_last_service_newgrf, SLE_INT32,              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_NEWGRF_LAST_SERVICE))),
-		NSL("service_interval",           SLE_CONDVAR(Vehicle, service_interval,          SLE_UINT16,                 SL_MIN_VERSION, SLV_31)),
-		NSL("service_interval",           SLE_CONDVAR(Vehicle, service_interval,          SLE_FILE_U32 | SLE_VAR_U16, SLV_31, SLV_180)),
-		NSL("service_interval",           SLE_CONDVAR(Vehicle, service_interval,          SLE_UINT16,                 SLV_180, SL_MAX_VERSION)),
+		NSL("service_interval",          SLEG_CONDVAR(_cur_vsl_props.service_interval,          SLE_UINT16,                 SL_MIN_VERSION, SLV_31)),
+		NSL("service_interval",          SLEG_CONDVAR(_cur_vsl_props.service_interval,          SLE_FILE_U32 | SLE_VAR_U16, SLV_31, SLV_180)),
+		NSL("service_interval",          SLEG_CONDVAR(_cur_vsl_props.service_interval,          SLE_UINT16,                 SLV_180, SL_MAX_VERSION)),
 		NSL("reliability",                    SLE_VAR(Vehicle, reliability,               SLE_UINT16)),
 		NSL("reliability_spd_dec",            SLE_VAR(Vehicle, reliability_spd_dec,       SLE_UINT16)),
 		NSL("breakdown_ctr",                  SLE_VAR(Vehicle, breakdown_ctr,             SLE_UINT8)),
@@ -1177,18 +1259,18 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("",                        SLEG_CONDVAR_X(_old_ahead_separation,              SLE_UINT32,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_AUTO_TIMETABLE, 1, 4))),
 		NSL("",                        SLE_CONDNULL_X(4,                                                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_AUTO_TIMETABLE, 1, 4))),
 
-		NSL("next_shared",                SLE_CONDREF(Vehicle, next_shared,               REF_VEHICLE,                SLV_2, SL_MAX_VERSION)),
+		NSL("next_shared",               SLEG_CONDREF(_cur_vsl_props.next_shared,               REF_VEHICLE,                SLV_2, SL_MAX_VERSION)),
 		NSL("",                          SLE_CONDNULL(2,                                                              SLV_2, SLV_69)),
 		NSL("",                          SLE_CONDNULL(4,                                                              SLV_69, SLV_101)),
 
-		NSL("group_id",                   SLE_CONDVAR(Vehicle, group_id,                  SLE_UINT16,                 SLV_60, SL_MAX_VERSION)),
+		NSL("group_id",                  SLEG_CONDVAR(_cur_vsl_props.group_id,                  SLE_UINT16,                 SLV_60, SL_MAX_VERSION)),
 
-		NSL("current_order_time",         SLE_CONDVAR(Vehicle, current_order_time,        SLE_UINT32,                 SLV_67, SL_MAX_VERSION)),
-		NSL("current_loading_time",     SLE_CONDVAR_X(Vehicle, current_loading_time,      SLE_UINT32,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_AUTO_TIMETABLE))),
-		NSL("current_loading_time",     SLE_CONDVAR_X(Vehicle, current_loading_time,      SLE_UINT32,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_JOKERPP, SL_JOKER_1_23))),
-		NSL("last_loading_tick",        SLE_CONDVAR_X(Vehicle, last_loading_tick,         SLE_INT64,                  SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_LAST_LOADING_TICK))),
+		NSL("current_order_time",        SLEG_CONDVAR(_cur_vsl_props.current_order_time,        SLE_UINT32,                 SLV_67, SL_MAX_VERSION)),
+		NSL("current_loading_time",    SLEG_CONDVAR_X(_cur_vsl_props.current_loading_time,      SLE_UINT32,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_AUTO_TIMETABLE))),
+		NSL("current_loading_time",    SLEG_CONDVAR_X(_cur_vsl_props.current_loading_time,      SLE_UINT32,                 SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_JOKERPP, SL_JOKER_1_23))),
+		NSL("last_loading_tick",       SLEG_CONDVAR_X(_cur_vsl_props.last_loading_tick,         SLE_INT64,                  SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_LAST_LOADING_TICK))),
 		NSL("",                        SLE_CONDNULL_X(4,                                                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_SPRINGPP))),
-		NSL("lateness_counter",           SLE_CONDVAR(Vehicle, lateness_counter,          SLE_INT32,                  SLV_67, SL_MAX_VERSION)),
+		NSL("lateness_counter",          SLEG_CONDVAR(_cur_vsl_props.lateness_counter,          SLE_INT32,                  SLV_67, SL_MAX_VERSION)),
 
 		NSL("",                          SLE_CONDNULL(10,                                                             SLV_2, SLV_144)), // old reserved space
 
@@ -1202,6 +1284,8 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 
 		NSLT_STRUCT<VehicleUnbunchStateStructHandler>("depot_unbunch_state"),
 		NSLT_STRUCTLIST<VehicleDispatchRecordsStructHandlerBase>("dispatch_records"),
+
+		NSL("consist",                  SLE_CONDREF_X(Vehicle, consist,                   REF_CONSIST,                  SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS))),
 	};
 
 	static const NamedSaveLoad _train_desc[] = {
@@ -1350,8 +1434,8 @@ NamedSaveLoadTable GetVehicleDescription(VehicleType vt)
 		NSL("",                         SLE_CONDNULL(5,                                                              SL_MIN_VERSION, SLV_58)),
 		NSL("owner",                         SLE_VAR(Vehicle, owner,                    SLE_UINT8)),
 		NSL("vehstatus",                     SLE_VAR(Vehicle, vehstatus,                SLE_UINT8)),
-		NSL("",                        SLE_CONDVAR_X(Vehicle, current_order.dest,       SLE_FILE_U8 | SLE_VAR_U16,   SL_MIN_VERSION, SLV_5, SlXvFeatureTest(XSLFTO_AND, XSLFI_DISASTER_VEH_STATE, 0, 0))),
-		NSL("",                        SLE_CONDVAR_X(Vehicle, current_order.dest,       SLE_UINT16,                  SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_DISASTER_VEH_STATE, 0, 0))),
+		NSL("",                       SLEG_CONDVAR_X(_cur_vsl_props.current_order.dest, SLE_FILE_U8 | SLE_VAR_U16,   SL_MIN_VERSION, SLV_5, SlXvFeatureTest(XSLFTO_AND, XSLFI_DISASTER_VEH_STATE, 0, 0))),
+		NSL("",                       SLEG_CONDVAR_X(_cur_vsl_props.current_order.dest, SLE_UINT16,                  SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_DISASTER_VEH_STATE, 0, 0))),
 		NSL("state",                   SLE_CONDVAR_X(DisasterVehicle, state,            SLE_UINT16,                  SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_DISASTER_VEH_STATE, 1))),
 
 		NSL("sprite[0]",                     SLE_VAR(Vehicle, sprite_seq.seq[0].sprite, SLE_FILE_U16 | SLE_VAR_U32)),
@@ -1468,6 +1552,8 @@ void Load_VEHS()
 			default: SlErrorCorrupt("Invalid vehicle type");
 		}
 
+		_cur_vsl_props = {};
+
 		SlObjectLoadFiltered(v, is_table ? slt : non_table_descs[vtype]);
 
 		if (_cargo_count != 0 && IsCompanyBuildableVehicleType(v) && CargoPacket::CanAllocateItem()) {
@@ -1477,21 +1563,21 @@ void Load_VEHS()
 		}
 
 		/* Old savegames used 'last_station_visited = 0xFF' */
-		if (IsSavegameVersionBefore(SLV_5) && v->last_station_visited == 0xFF) {
-			v->last_station_visited = StationID::Invalid();
+		if (IsSavegameVersionBefore(SLV_5) && _cur_vsl_props.last_station_visited == 0xFF) {
+			_cur_vsl_props.last_station_visited = StationID::Invalid();
 		}
 
-		if (IsSavegameVersionBefore(SLV_182) && !SlXvIsFeaturePresent(XSLFI_CHILLPP)) v->last_loading_station = StationID::Invalid();
+		if (IsSavegameVersionBefore(SLV_182) && !SlXvIsFeaturePresent(XSLFI_CHILLPP)) _cur_vsl_props.last_loading_station = StationID::Invalid();
 
 		if (IsSavegameVersionBefore(SLV_5)) {
 			/* Convert the current_order.type (which is a mix of type and flags, because
 			 *  in those versions, they both were 4 bits big) to type and flags */
-			v->current_order.flags = GB(v->current_order.type, 4, 4);
-			v->current_order.type &= 0x0F;
+			_cur_vsl_props.current_order.flags = GB(_cur_vsl_props.current_order.type, 4, 4);
+			_cur_vsl_props.current_order.type &= 0x0F;
 		}
 
 		/* Advanced vehicle lists got added */
-		if (IsSavegameVersionBefore(SLV_60)) v->group_id = DEFAULT_GROUP;
+		if (IsSavegameVersionBefore(SLV_60)) _cur_vsl_props.group_id = DEFAULT_GROUP;
 
 		/* Handle pre-OrderList orders */
 		if (IsSavegameVersionBefore(SLV_105) && _old_order_item_ref != 0) RegisterVehicleOldOrderRef(index, OrderID(_old_order_item_ref - 1)); // -1 to go from saveload ref to index
@@ -1505,7 +1591,7 @@ void Load_VEHS()
 			v->vehicle_flags.Set(VehicleFlag::SeparationActive, _old_ahead_separation);
 		}
 
-		if (SlXvIsFeaturePresent(XSLFI_TIMETABLES_START_TICKS, 2, 2) && v->timetable_start != 0 && _old_timetable_start_subticks != 0) {
+		if (SlXvIsFeaturePresent(XSLFI_TIMETABLES_START_TICKS, 2, 2) && _cur_vsl_props.timetable_start != 0 && _old_timetable_start_subticks != 0) {
 			_old_timetable_start_subticks_map[v->index] = _old_timetable_start_subticks;
 		}
 
@@ -1519,6 +1605,8 @@ void Load_VEHS()
 			}
 			rv->cached_path->layout_ctr = _path_layout_ctr;
 		}
+
+		_legacy_vsl_props[v->index] = _cur_vsl_props;
 	}
 }
 
@@ -1527,9 +1615,13 @@ static void Ptrs_VEHS()
 	SaveLoadTableData slt = SlPrepareNamedSaveLoadTableForPtrOrNull(_table_vehicle_desc);
 
 	for (Vehicle *v : Vehicle::Iterate()) {
+		_cur_vsl_props = _legacy_vsl_props[v->index];
+
 		if (SlXvIsFeaturePresent(XSLFI_CHILLPP)) _cpp_packets = std::move(_veh_cpp_packets[v->index]);
 		SlObjectPtrOrNullFiltered(v, slt);
 		if (SlXvIsFeaturePresent(XSLFI_CHILLPP)) _veh_cpp_packets[v->index] = std::move(_cpp_packets);
+
+		_legacy_vsl_props[v->index] = _cur_vsl_props;
 	}
 }
 
@@ -1543,8 +1635,8 @@ void Load_VEOX()
 	while ((index = SlIterateArray()) != -1) {
 		Vehicle *v = Vehicle::GetIfValid(index);
 		assert(v != nullptr);
-		v->current_order.AllocExtraInfo();
-		SlObject(v->current_order.extra.get(), slt);
+		v->VCCurrentOrder().AllocExtraInfo();
+		SlObject(v->VCCurrentOrder().extra.get(), slt);
 	}
 }
 
@@ -1896,6 +1988,133 @@ void Load_VUBS()
 	}
 }
 
+struct ConsistDispatchRecordsStructHandlerBase final : public DispatchRecordsStructHandlerBase {
+	void Save(void *object) const override { this->SaveDispatchRecords(static_cast<Consist*>(object)->dispatch_records); }
+
+	void Load(void *object) const override { this->LoadDispatchRecords(static_cast<Consist*>(object)->dispatch_records); }
+};
+
+struct ConsistOrderExtraDataStructHandler final : public TypedSaveLoadStructHandler<ConsistOrderExtraDataStructHandler, Consist> {
+	NamedSaveLoadTable GetDescription() const override
+	{
+		extern NamedSaveLoadTable GetOrderExtraInfoDescription();
+		return GetOrderExtraInfoDescription();
+	}
+
+	void Save(Consist *v) const override
+	{
+		if (!v->current_order.extra) return;
+
+		SlObjectSaveFiltered(v->current_order.extra.get(), this->GetLoadDescription());
+	}
+
+	void Load(Consist *v) const override
+	{
+		v->current_order.AllocExtraInfo();
+		SlObjectLoadFiltered(v->current_order.extra.get(), this->GetLoadDescription());
+	}
+};
+
+NamedSaveLoadTable GetConsistDescription()
+{
+	static const NamedSaveLoad _consist_desc[] = {
+		// NSL("name",                          SLE_CONDSTR_X(Consist, name,                    0, SLE_STR | SLF_ALLOW_CONTROL,     SLV_84,         SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("current_order_time",            SLE_CONDVAR_X(Consist, current_order_time,         SLE_UINT32,                              SLV_67,         SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("lateness_counter",              SLE_CONDVAR_X(Consist, lateness_counter,           SLE_INT32,                               SLV_67,         SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("timetable_start",               SLE_CONDVAR_X(Consist, timetable_start,            SLE_INT64,                               SLV_129,        SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("service_interval",              SLE_CONDVAR_X(Consist, service_interval,           SLE_UINT16,                              SLV_180,        SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("cur_implicit_order_index",            SLE_VAR(Consist, cur_implicit_order_index,   SLE_VEHORDERID)),
+		NSL("cur_real_order_index",          SLE_CONDVAR_X(Consist, cur_real_order_index,       SLE_VEHORDERID,                          SLV_158,        SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("cur_timetable_order_index",     SLE_CONDVAR_X(Consist, cur_timetable_order_index,  SLE_VEHORDERID,                          SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("vehicle_flags",                 SLE_CONDVAR_X(Consist, vehicle_flags,              SLE_UINT32,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSLT_STRUCTLIST<ConsistDispatchRecordsStructHandlerBase>("dispatch_records"),
+
+		NSL("owner",                         SLE_CONDVAR_X(Consist,     owner,                     SLE_UINT8,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("group_id",                      SLE_CONDVAR_X(Consist,     group_id,                  SLE_UINT16,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("unitnumber",                    SLE_CONDVAR_X(Consist,     unitnumber,                SLE_UINT16,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("profit_this_year",              SLE_CONDVAR_X(Consist,     profit_this_year,          SLE_INT64,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("profit_last_year",              SLE_CONDVAR_X(Consist,     profit_last_year,          SLE_INT64,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("profit_lifetime",               SLE_CONDVAR_X(Consist,     profit_lifetime,           SLE_INT64,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("orders",                        SLE_CONDREF_X(Consist,     orders,                    REF_ORDERLIST,                           SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("current_order.type",              SLE_CONDVAR(Consist,     current_order.type,        SLE_UINT8,                               SL_MIN_VERSION, SLV_5)),
+		NSL("current_order.dest",              SLE_CONDVAR(Consist,     current_order.dest,        SLE_FILE_U8  | SLE_VAR_U16,              SL_MIN_VERSION, SLV_5)),
+
+		/* Orders for version 5 and on */
+		NSL("current_order.type",              SLE_CONDVAR(Consist,     current_order.type,        SLE_UINT8,                               SLV_5, SL_MAX_VERSION)),
+		NSL("current_order.flags",           SLE_CONDVAR_X(Consist,     current_order.flags,       SLE_FILE_U8 | SLE_VAR_U16,               SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 0, 0))),
+		NSL("current_order.flags",           SLE_CONDVAR_X(Consist,     current_order.flags,       SLE_UINT16,                              SLV_5, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_ORDER_FLAGS_EXTRA, 1))),
+		NSL("current_order.dest",              SLE_CONDVAR(Consist,     current_order.dest,        SLE_UINT16,                              SLV_5, SL_MAX_VERSION)),
+
+		/* Refit in current order */
+		NSL("current_order.refit_cargo",       SLE_CONDVAR(Consist,     current_order.refit_cargo, SLE_UINT8,                               SLV_36, SL_MAX_VERSION)),
+
+		/* Timetable in current order */
+		NSL("current_order.wait_time",       SLE_CONDVAR_X(Consist,     current_order.wait_time,   SLE_FILE_U16 | SLE_VAR_U32,              SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
+		NSL("current_order.wait_time",       SLE_CONDVAR_X(Consist,     current_order.wait_time,   SLE_UINT32,                              SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
+		NSL("current_order.travel_time",     SLE_CONDVAR_X(Consist,     current_order.travel_time, SLE_FILE_U16 | SLE_VAR_U32,              SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 0, 5))),
+		NSL("current_order.travel_time",     SLE_CONDVAR_X(Consist,     current_order.travel_time, SLE_UINT32,                              SLV_67, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_TIMETABLE_EXTRA, 6))),
+		NSL("current_order.max_speed",         SLE_CONDVAR(Consist,     current_order.max_speed,   SLE_UINT16,                              SLV_174, SL_MAX_VERSION)),
+
+		NSLT_STRUCT<ConsistOrderExtraDataStructHandler>("current_order.extra"),
+
+		NSL("chain",                         SLE_CONDREF_X(Consist,     first,                     REF_VEHICLE,                             SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("day_counter",                   SLE_CONDVAR_X(Consist,     day_counter,               SLE_UINT8,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("tick_counter",                  SLE_CONDVAR_X(Consist,     tick_counter,              SLE_UINT8,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("next_shared",                   SLE_CONDREF_X(Consist,     next_shared,               REF_CONSIST,                             SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("type",                          SLE_CONDVAR_X(Consist,     type,                      SLE_UINT8,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("last_station_visited",          SLE_CONDVAR_X(Consist,     last_station_visited,      SLE_UINT16,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("last_loading_station",          SLE_CONDVAR_X(Consist,     last_loading_station,      SLE_UINT16,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("last_loading_tick",             SLE_CONDVAR_X(Consist,     last_loading_tick,         SLE_INT64,                               SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("current_loading_time",          SLE_CONDVAR_X(Consist,     current_loading_time,      SLE_UINT32,                              SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+
+		NSL("children",                   SLE_CONDREFVEC_X(Consist,     children_ahead,                  REF_CONSIST,                             SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+		NSL("parent",                        SLE_CONDREF_X(Consist,     parent,                    REF_CONSIST,                             SL_MIN_VERSION, SL_MAX_VERSION, SlXvFeatureTest(XSLFTO_AND, XSLFI_MAPLE_CONSISTS, 1))),
+	};
+
+	return _consist_desc;
+}
+
+void Save_CNST()
+{
+	SaveLoadTableData slt = SlTableHeader(GetConsistDescription());
+
+	for (Consist *c : Consist::Iterate())
+	{
+		SlSetArrayIndex(c->index);
+		SlObjectSaveFiltered(c, slt);
+	}
+}
+
+void Load_CNST()
+{
+	SaveLoadTableData slt = SlTableHeader(GetConsistDescription());
+
+	int index;
+	while ((index = SlIterateArray()) != -1)
+	{
+		ConsistID id = static_cast<ConsistID>(index);
+
+		Consist* c = new (id) Consist;
+		SlObjectLoadFiltered(c, slt);
+	}
+}
+
+void Prts_CNST()
+{
+	SaveLoadTableData slt = SlPrepareNamedSaveLoadTableForPtrOrNull(GetConsistDescription());
+
+	for (Consist* c : Consist::Iterate())
+	{
+		SlObjectPtrOrNullFiltered(c, slt);
+	}
+}
+
 static const ChunkHandler veh_chunk_handlers[] = {
 	{ 'VEHS', Save_VEHS, Load_VEHS, Ptrs_VEHS, nullptr, CH_SPARSE_TABLE },
 	{ 'VEOX', nullptr,   Load_VEOX, nullptr,   nullptr, CH_READONLY },
@@ -1903,6 +2122,7 @@ static const ChunkHandler veh_chunk_handlers[] = {
 	{ 'VENC', Save_VENC, Load_VENC, nullptr,   nullptr, CH_RIFF,         Special_VENC },
 	{ 'VLKA', nullptr,   Load_VLKA, nullptr,   nullptr, CH_READONLY },
 	{ 'VUBS', nullptr,   Load_VUBS, nullptr,   nullptr, CH_READONLY },
+	{ 'CNST', Save_CNST, Load_CNST, Prts_CNST, nullptr, CH_SPARSE_TABLE },
 };
 
 extern const ChunkHandlerTable _veh_chunk_handlers(veh_chunk_handlers);

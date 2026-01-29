@@ -1482,7 +1482,7 @@ void SwitchToMode(SwitchMode new_mode)
 void WriteVehicleInfo(format_target &buffer, const Vehicle *u, const Vehicle *v, uint length)
 {
 	buffer.format(": type {}, vehicle {} ({}), company {}, unit number {}, wagon {}, engine: ",
-			u->type, u->index, v->index, u->owner, v->unitnumber, length);
+			u->type, u->index, v->index, u->owner, v->VCUnitNumber(), length);
 	{
 		format_buffer engname;
 		AppendStringInPlace(engname, STR_ENGINE_NAME, u->engine_type);

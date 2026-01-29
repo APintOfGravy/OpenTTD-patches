@@ -88,7 +88,7 @@ uint16_t GroupStatistics::GetNumEngines(EngineID engine) const
  */
 /* static */ GroupStatistics &GroupStatistics::Get(const Vehicle *v)
 {
-	return GroupStatistics::Get(v->owner, v->group_id, v->type);
+	return GroupStatistics::Get(v->owner, v->VCGroupID(), v->type);
 }
 
 /**
@@ -332,7 +332,7 @@ static void PropagateChildLiveryResetVehicleCache(const Group *g)
 {
 	/* Company colour data is indirectly cached. */
 	for (Vehicle *v : Vehicle::IterateFrontOnly()) {
-		if (v->IsPrimaryVehicle() && (v->group_id == g->index || IsGroupIDDescendantOfGroupID(v->group_id, g->index, g->owner))) {
+		if (v->IsPrimaryVehicle() && (v->VCGroupID() == g->index || IsGroupIDDescendantOfGroupID(v->VCGroupID(), g->index, g->owner))) {
 			for (Vehicle *u = v; u != nullptr; u = u->Next()) {
 				u->colourmap = PAL_NONE;
 				u->InvalidateNewGRFCache();
@@ -631,8 +631,8 @@ static void AddVehicleToGroup(Vehicle *v, GroupID new_g)
 		case VEH_ROAD:
 		case VEH_SHIP:
 		case VEH_AIRCRAFT:
-			if (v->IsEngineCountable()) UpdateNumEngineGroup(v, v->group_id, new_g);
-			v->group_id = new_g;
+			if (v->IsEngineCountable()) UpdateNumEngineGroup(v, v->VCGroupID(), new_g);
+			v->VCGroupID() = new_g;
 			for (Vehicle *u = v; u != nullptr; u = u->Next()) {
 				u->colourmap = PAL_NONE;
 				u->InvalidateNewGRFCache();
@@ -689,7 +689,7 @@ CommandCost CmdAddVehicleGroup(DoCommandFlags flags, GroupID group_id, VehicleID
 		if (add_shared) {
 			/* Add vehicles in the shared order list as well. */
 			for (Vehicle *v2 = v->FirstShared(); v2 != nullptr; v2 = v2->NextShared()) {
-				if (v2->group_id != new_g) AddVehicleToGroup(v2, new_g);
+				if (v2->VCGroupID() != new_g) AddVehicleToGroup(v2, new_g);
 			}
 		}
 
@@ -778,11 +778,11 @@ CommandCost CmdAddSharedVehicleGroup(DoCommandFlags flags, GroupID id_g, Vehicle
 		 * then add all shared vehicles of this front engine to the group id_g */
 		for (const Vehicle *v : Vehicle::IterateTypeFrontOnly(type)) {
 			if (v->IsPrimaryVehicle()) {
-				if (v->group_id != id_g) continue;
+				if (v->VCGroupID() != id_g) continue;
 
 				/* For each shared vehicles add it to the group */
 				for (Vehicle *v2 = v->FirstShared(); v2 != nullptr; v2 = v2->NextShared()) {
-					if (v2->group_id != id_g) Command<CMD_ADD_VEHICLE_GROUP>::Do(flags, id_g, v2->index, false);
+					if (v2->VCGroupID() != id_g) Command<CMD_ADD_VEHICLE_GROUP>::Do(flags, id_g, v2->index, false);
 				}
 			}
 		}
@@ -810,7 +810,7 @@ CommandCost CmdRemoveAllVehiclesGroup(DoCommandFlags flags, GroupID group_id)
 		/* Find each Vehicle that belongs to the group old_g and add it to the default group */
 		for (const Vehicle *v : Vehicle::IterateFrontOnly()) {
 			if (v->IsPrimaryVehicle()) {
-				if (v->group_id != group_id) continue;
+				if (v->VCGroupID() != group_id) continue;
 
 				/* Add The Vehicle to the default group */
 				Command<CMD_ADD_VEHICLE_GROUP>::Do(flags, DEFAULT_GROUP, v->index, false);
@@ -912,12 +912,12 @@ void SetTrainGroupID(Train *v, GroupID new_g)
 {
 	if (!Group::IsValidID(new_g) && !IsDefaultGroupID(new_g)) return;
 
-	assert(v->IsFrontEngine() || IsDefaultGroupID(new_g));
+	assert(v->IsFrontUnit() || IsDefaultGroupID(new_g));
 
 	for (Vehicle *u = v; u != nullptr; u = u->Next()) {
-		if (u->IsEngineCountable()) UpdateNumEngineGroup(u, u->group_id, new_g);
+		if (u->IsEngineCountable()) UpdateNumEngineGroup(u, u->VCGroupID(), new_g);
 
-		u->group_id = new_g;
+		u->VCGroupID() = new_g;
 		u->colourmap = PAL_NONE;
 		u->InvalidateNewGRFCache();
 		u->InvalidateImageCache();
@@ -939,13 +939,13 @@ void SetTrainGroupID(Train *v, GroupID new_g)
  */
 void UpdateTrainGroupID(Train *v)
 {
-	assert(v->IsFrontEngine() || v->IsFreeWagon());
+	assert(v->IsFrontUnit() || v->IsFreeWagon());
 
-	GroupID new_g = v->IsFrontEngine() ? v->group_id : (GroupID)DEFAULT_GROUP;
+	GroupID new_g = v->IsFrontUnit() ? v->VCGroupID() : (GroupID)DEFAULT_GROUP;
 	for (Vehicle *u = v; u != nullptr; u = u->Next()) {
-		if (u->IsEngineCountable()) UpdateNumEngineGroup(u, u->group_id, new_g);
+		if (u->IsEngineCountable()) UpdateNumEngineGroup(u, u->VCGroupID(), new_g);
 
-		u->group_id = new_g;
+		u->VCGroupID() = new_g;
 		u->colourmap = PAL_NONE;
 		u->InvalidateNewGRFCache();
 		u->InvalidateImageCache();

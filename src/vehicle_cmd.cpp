@@ -7,6 +7,7 @@
 
 /** @file vehicle_cmd.cpp Commands for vehicles. */
 
+#include "depot_base.h"
 #include "stdafx.h"
 #include "roadveh.h"
 #include "news_func.h"
@@ -159,6 +160,9 @@ CommandCost CmdBuildVehicle(DoCommandFlags flags, TileIndex tile, EngineID eid, 
 	SavedRandomSeeds saved_seeds;
 	SaveRandomSeeds(&saved_seeds);
 
+	Debug(misc, 0, "CmdBuildVehicle(): Creating new vehicle.");
+	if (flags.Test(DoCommandFlag::QueryCost)) Debug(misc, 0, "CmdBuildVehicle(): Querying cost, Execute: {}", flags.Test(DoCommandFlag::Execute));
+
 	Vehicle *v = nullptr;
 	switch (type) {
 		case VEH_TRAIN:    value.AddCost(CmdBuildRailVehicle(tile, subflags, e, &v)); break;
@@ -168,9 +172,11 @@ CommandCost CmdBuildVehicle(DoCommandFlags flags, TileIndex tile, EngineID eid, 
 		default: NOT_REACHED(); // Safe due to IsDepotTile()
 	}
 
+	Debug(misc, 0, "CmdBuildVehicle() END.");
+
 	if (value.Succeeded()) {
 		if (subflags.Test(DoCommandFlag::Execute)) {
-			v->unitnumber = unit_num;
+			v->VCUnitNumber() = unit_num;
 			v->value      = value.GetCost();
 			value.SetResultData(v->index);
 		}
@@ -197,14 +203,14 @@ CommandCost CmdBuildVehicle(DoCommandFlags flags, TileIndex tile, EngineID eid, 
 		if (flags.Test(DoCommandFlag::Execute)) {
 			if (type == VEH_TRAIN && use_free_vehicles && !flags.Test(DoCommandFlag::AutoReplace) && Train::From(v)->IsEngine()) {
 				/* Move any free wagons to the new vehicle. */
-				NormalizeTrainVehInDepot(Train::From(v));
+				// NormalizeTrainVehInDepot(Train::From(v));
 			}
 
 			InvalidateWindowData(WC_VEHICLE_DEPOT, v->tile.base());
 			InvalidateVehicleListWindows(type);
 			SetWindowDirty(WC_COMPANY, _current_company);
 			if (IsLocalCompany()) {
-				InvalidateAutoreplaceWindow(v->engine_type, v->group_id); // updates the auto replace window (must be called before incrementing num_engines)
+				InvalidateAutoreplaceWindow(v->engine_type, v->VCGroupID()); // updates the auto replace window (must be called before incrementing num_engines)
 			}
 		}
 
@@ -217,7 +223,7 @@ CommandCost CmdBuildVehicle(DoCommandFlags flags, TileIndex tile, EngineID eid, 
 				if (!subflags.Test(DoCommandFlag::AutoReplace)) OrderBackup::Restore(v, client_id);
 			}
 
-			Company::Get(v->owner)->freeunits[v->type].UseID(v->unitnumber);
+			Company::Get(v->owner)->freeunits[v->type].UseID(v->VCUnitNumber());
 		}
 
 
@@ -543,7 +549,7 @@ CommandCost CmdRefitVehicle(DoCommandFlags flags, VehicleID veh_id, CargoType ne
 	if (!is_virtual_train) {
 		if (!flags.Test(DoCommandFlag::QueryCost) && // used by the refit GUI, including the order refit GUI.
 				!free_wagon && // used by autoreplace/renew
-				(!auto_refit || !front->current_order.IsType(OT_LOADING)) && // refit inside stations
+				(!auto_refit || !front->VCCurrentOrder().IsType(OT_LOADING)) && // refit inside stations
 				!front->IsStoppedInDepot()) { // refit inside depots
 			return CommandCost(STR_ERROR_TRAIN_MUST_BE_STOPPED_INSIDE_DEPOT + front->type);
 		}
@@ -680,6 +686,16 @@ CommandCost CmdStartStopVehicle(DoCommandFlags flags, VehicleID veh_id, bool eva
 		if (v->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) v->vehicle_flags.Reset(VehicleFlag::TimetableStarted);
 
 		v->vehstatus.Flip(VehState::Stopped);
+
+		if (!v->vehstatus.Test(VehState::Stopped) && IsDepotTile(v->tile))
+		{
+			Depot::GetByTile(v->tile)->vehicles.erase(v->consist);
+		}
+		else if (IsDepotTile(v->tile))
+		{
+			Depot::GetByTile(v->tile)->vehicles.emplace(v->consist);
+		}
+
 		if (v->type == VEH_ROAD) {
 			if (!RoadVehicle::From(v)->IsRoadVehicleOnLevelCrossing()) v->cur_speed = 0;
 		} else if (v->type != VEH_TRAIN) {
@@ -696,7 +712,7 @@ CommandCost CmdStartStopVehicle(DoCommandFlags flags, VehicleID veh_id, bool eva
 
 		/* Prevent any attempt to update timetable for current order if now stopped in depot. */
 		if (v->IsStoppedInDepot() && !flags.Test(DoCommandFlag::AutoReplace)) {
-			v->cur_timetable_order_index = INVALID_VEH_ORDER_ID;
+			v->VCCurTimetableOrderIndex() = INVALID_VEH_ORDER_ID;
 		}
 
 		v->MarkDirty();
@@ -824,7 +840,7 @@ CommandCost CmdDepotMassAutoReplace(DoCommandFlags flags, TileIndex tile, Vehicl
 bool IsUniqueVehicleName(std::string_view name)
 {
 	for (const Vehicle *v : Vehicle::Iterate()) {
-		if (!v->name.empty() && v->name == name) return false;
+		if (!v->VCName().empty() && v->VCName() == name) return false;
 	}
 
 	return true;
@@ -837,7 +853,7 @@ bool IsUniqueVehicleName(std::string_view name)
  */
 static void CloneVehicleName(const Vehicle *src, Vehicle *dst)
 {
-	std::string new_name = src->name.c_str();
+	std::string new_name = src->VCName().c_str();
 
 	if (!std::isdigit(*new_name.rbegin())) {
 		// No digit at the end, so start at number 1 (this will get incremented to 2)
@@ -862,7 +878,7 @@ static void CloneVehicleName(const Vehicle *src, Vehicle *dst)
 	} while(max_iterations > 0 && !IsUniqueVehicleName(new_name));
 
 	if (max_iterations > 0) {
-		dst->name = new_name;
+		dst->VCName() = new_name;
 	}
 
 	/* All done. If we didn't find a name, it'll just use its default. */
@@ -1438,7 +1454,7 @@ CommandCost CmdCloneVehicle(DoCommandFlags flags, TileIndex tile, VehicleID veh_
 			} else {
 				/* this is a front engine or not a train. */
 				w_front = w;
-				w->service_interval = v->service_interval;
+				w->VCServiceInterval() = v->VCServiceInterval();
 				w->SetServiceIntervalIsCustom(v->ServiceIntervalIsCustom());
 				w->SetServiceIntervalIsPercent(v->ServiceIntervalIsPercent());
 			}
@@ -1454,7 +1470,7 @@ CommandCost CmdCloneVehicle(DoCommandFlags flags, TileIndex tile, VehicleID veh_
 	const Company *owner = Company::GetIfValid(_current_company);
 	if ((flags.Test(DoCommandFlag::Execute)) && (share_orders || owner == nullptr || owner->settings.copy_clone_add_to_group)) {
 		/* Cloned vehicles belong to the same group */
-		Command<CMD_ADD_VEHICLE_GROUP>::Do(flags, v_front->group_id, w_front->index, false);
+		Command<CMD_ADD_VEHICLE_GROUP>::Do(flags, v_front->VCGroupID(), w_front->index, false);
 	}
 
 
@@ -1519,7 +1535,7 @@ CommandCost CmdCloneVehicle(DoCommandFlags flags, TileIndex tile, VehicleID veh_
 		}
 
 		/* Now clone the vehicle's name, if it has one. */
-		if (!v_front->name.empty()) CloneVehicleName(v_front, w_front);
+		if (!v_front->VCName().empty()) CloneVehicleName(v_front, w_front);
 
 		/* Since we can't estimate the cost of cloning a vehicle accurately we must
 		 * check whether the company has enough money manually. */
@@ -1665,9 +1681,9 @@ CommandCost CmdRenameVehicle(DoCommandFlags flags, VehicleID veh_id, const std::
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		if (reset) {
-			v->name.clear();
+			v->VCName().clear();
 		} else {
-			v->name = text;
+			v->VCName() = text;
 		}
 		InvalidateWindowClassesData(GetWindowClassForVehicleType(v->type), 1);
 		InvalidateWindowClassesData(WC_DEPARTURES_BOARD);

@@ -470,7 +470,7 @@ public:
 	{
 		const Group *group = nullptr;
 		if (this->order_list_info.has_value()) {
-			group = Group::GetIfValid(this->order_list_info->veh->group_id);
+			group = Group::GetIfValid(this->order_list_info->veh->VCGroupID());
 		}
 		std::string name = (group == nullptr) ? "UNNAMED" : GetString(STR_GROUP_NAME, group->index);
 		SanitizeFilename(name);
@@ -846,7 +846,7 @@ public:
 					};
 
 					const FiosOrderListInfo &info = *this->order_list_info;
-					if (info.veh->orders != nullptr && info.order_insert_index == INVALID_VEH_ORDER_ID) {
+					if (info.veh->VCOrders() != nullptr && info.order_insert_index == INVALID_VEH_ORDER_ID) {
 						ShowQuery(GetEncodedString(STR_ORDERLIST_JSON_CONFIRM_OVERRIDE_QUERY_CAPTION), GetEncodedString(STR_ORDERLIST_JSON_CONFIRM_OVERRIDE), this, callback);
 					} else {
 						callback(this, true);
@@ -1030,7 +1030,7 @@ public:
 			} else if (this->abstract_filetype == FT_ORDERLIST) {
 				auto fh = FileHandle::Open(FiosMakeOrderListName(this->filename_editbox.text.GetText().c_str()), "w");
 				if (fh.has_value()) {
-					std::string data = OrderListToJSONString(this->order_list_info->veh->orders);
+					std::string data = OrderListToJSONString(this->order_list_info->veh->VCOrders());
 					fwrite(data.data(), 1, data.size(), *fh);
 					this->Close();
 				}

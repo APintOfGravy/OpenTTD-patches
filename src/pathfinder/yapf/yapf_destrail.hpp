@@ -143,9 +143,9 @@ public:
 	void SetDestination(const Train *v)
 	{
 		this->any_depot = false;
-		switch (v->current_order.GetType()) {
+		switch (v->VCCurrentOrder().GetType()) {
 			case OT_GOTO_WAYPOINT:
-				if (!Waypoint::Get(v->current_order.GetDestination().ToStationID())->IsSingleTile()) {
+				if (!Waypoint::Get(v->VCCurrentOrder().GetDestination().ToStationID())->IsSingleTile()) {
 					/* In case of 'complex' waypoints we need to do a look
 					 * ahead. This look ahead messes a bit about, which
 					 * means that it 'corrupts' the cache. To prevent this
@@ -156,13 +156,13 @@ public:
 				[[fallthrough]];
 
 			case OT_GOTO_STATION:
-				this->dest_tile = CalcClosestStationTile(v->current_order.GetDestination().ToStationID(), v->tile, v->current_order.IsType(OT_GOTO_STATION) ? StationType::Rail : StationType::RailWaypoint);
-				this->dest_station_id = v->current_order.GetDestination().ToStationID();
+				this->dest_tile = CalcClosestStationTile(v->VCCurrentOrder().GetDestination().ToStationID(), v->tile, v->VCCurrentOrder().IsType(OT_GOTO_STATION) ? StationType::Rail : StationType::RailWaypoint);
+				this->dest_station_id = v->VCCurrentOrder().GetDestination().ToStationID();
 				this->dest_trackdirs = INVALID_TRACKDIR_BIT;
 				break;
 
 			case OT_GOTO_DEPOT:
-				if (v->current_order.GetDepotActionType() & ODATFB_NEAREST_DEPOT) {
+				if (v->VCCurrentOrder().GetDepotActionType() & ODATFB_NEAREST_DEPOT) {
 					this->any_depot = true;
 				}
 				[[fallthrough]];

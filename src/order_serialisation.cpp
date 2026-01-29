@@ -493,7 +493,7 @@ std::string OrderListToJSONString(const OrderList *ol)
 
 	const Vehicle *veh = ol->GetFirstSharedVehicle();
 	VehicleType vt = veh->type;
-	const Group *group = Group::GetIfValid(veh->group_id);
+	const Group *group = Group::GetIfValid(veh->VCGroupID());
 
 	json[FName::VEHICLE_TYPE] = vt;
 	if (group != nullptr && !group->name.empty()) {
@@ -1397,7 +1397,7 @@ OrderImportErrors ImportJsonOrderList(const Vehicle *veh, std::string_view json_
 		cmd_buffer.op_serialiser.ClearSchedules();
 	}
 	const VehicleOrderID order_insert_offset = replace_existing_mode ? 0 : insert_index;
-	const uint schedule_insert_offset = (replace_existing_mode || veh->orders == nullptr) ? 0 : veh->orders->GetScheduledDispatchScheduleCount();
+	const uint schedule_insert_offset = (replace_existing_mode || veh->VCOrders() == nullptr) ? 0 : veh->VCOrders()->GetScheduledDispatchScheduleCount();
 
 	const auto &orders_json = json[FName::Orders::OBJKEY];
 
@@ -1475,7 +1475,7 @@ OrderImportErrors ImportJsonOrderList(const Vehicle *veh, std::string_view json_
 	{
 		Colours route_overlay_colour = COLOUR_WHITE;
 		json_importer.TryGetField(FName::ROUTE_OVERLAY_COLOUR, route_overlay_colour, JOIET_MINOR);
-		const Colours current = (veh->orders != nullptr) ? veh->orders->GetRouteOverlayColour() : COLOUR_WHITE;
+		const Colours current = (veh->VCOrders() != nullptr) ? veh->VCOrders()->GetRouteOverlayColour() : COLOUR_WHITE;
 		if (route_overlay_colour != current) {
 			cmd_buffer.op_serialiser.SetRouteOverlayColour(route_overlay_colour);
 		}

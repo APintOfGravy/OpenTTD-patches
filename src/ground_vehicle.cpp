@@ -8,12 +8,14 @@
 /** @file ground_vehicle.cpp Implementation of GroundVehicle. */
 
 #include "stdafx.h"
+#include "consist.h"
 #include "train.h"
 #include "roadveh.h"
 #include "depot_map.h"
 #include "tunnel_base.h"
 #include "slope_type.h"
 #include "company_func.h"
+#include "vehicle_base.h"
 #include "vehicle_func.h"
 
 #include "safeguards.h"
@@ -302,8 +304,8 @@ GroundVehicleAcceleration GroundVehicle<T, Type>::GetAcceleration()
 			}
 
 			if (this->cur_speed < 3 && accel < 5 &&
-					this->IsFrontEngine() && !(this->current_order_time & 0x3FF) &&
-					!(this->current_order.IsType(OT_LOADING)) &&
+					this->IsFrontUnit() && !(this->VCCurrentOrderTime() & 0x3FF) &&
+					!(this->VCCurrentOrder().IsType(OT_LOADING)) &&
 					!(Train::From(this)->flags & (VRF_IS_BROKEN | (1 << VRF_TRAIN_STUCK))) &&
 					this->owner == _local_company) {
 				ShowTrainTooHeavyAdviceMessage(this);
@@ -494,6 +496,13 @@ uint GroundVehicle<T, Type>::DoUpdateSpeed(GroundVehicleAcceleration accel, int 
 	scaled_spd += this->progress;
 	this->progress = 0; // set later in *Handler or *Controller
 	return scaled_spd;
+}
+
+template <class T, VehicleType Type>
+inline bool GroundVehicle<T, Type>::IsFreeWagon() const {
+	if (this->consist == nullptr) return true;
+	else if (this != this->consist->FirstVehicle()) return false;
+	else return (this->consist->powered_units.size() == 0);
 }
 
 /* Instantiation for Train */

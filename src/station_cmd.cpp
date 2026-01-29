@@ -2472,7 +2472,7 @@ CommandCost RemoveRoadStop(TileIndex tile, DoCommandFlags flags, int replacement
 
 		/* Make sure no vehicle is going to the old roadstop */
 		for (RoadVehicle *v : RoadVehicle::IterateFrontOnly()) {
-			if (v->current_order.IsType(OT_GOTO_STATION) && v->dest_tile == tile) {
+			if (v->VCCurrentOrder().IsType(OT_GOTO_STATION) && v->dest_tile == tile) {
 				v->SetDestTile(v->GetOrderStationLocation(st->index));
 			}
 		}
@@ -3272,21 +3272,21 @@ static CommandCost RemoveDock(TileIndex tile, DoCommandFlags flags)
 
 		for (Ship *s : Ship::IterateFrontOnly()) {
 			/* Find all ships going to our dock. */
-			if (s->current_order.GetDestination() != st->index) {
+			if (s->VCCurrentOrder().GetDestination() != st->index) {
 				continue;
 			}
 
 			/* Find ships that are marked as "loading" but are no longer on a
 			 * docking tile. Force them to leave the station (as they were loading
 			 * on the removed dock). */
-			if (s->current_order.IsType(OT_LOADING) && !(IsDockingTile(s->tile) && IsShipDestinationTile(s->tile, st->index))) {
+			if (s->VCCurrentOrder().IsType(OT_LOADING) && !(IsDockingTile(s->tile) && IsShipDestinationTile(s->tile, st->index))) {
 				s->LeaveStation();
 			}
 
 			/* If we no longer have a dock, mark the order as invalid and send
 			 * the ship to the next order (or, if there is none, make it
 			 * wander the world). */
-			if (s->current_order.IsType(OT_GOTO_STATION) && !st->facilities.Test(StationFacility::Dock)) {
+			if (s->VCCurrentOrder().IsType(OT_GOTO_STATION) && !st->facilities.Test(StationFacility::Dock)) {
 				s->SetDestTile(s->GetOrderStationLocation(st->index));
 			}
 		}
@@ -4030,28 +4030,28 @@ static VehicleEnterTileStates VehicleEnter_Station(Vehicle *v, TileIndex tile, i
 {
 	if (v->type == VEH_TRAIN) {
 		StationID station_id = GetStationIndex(tile);
-		if (v->current_order.IsType(OT_GOTO_WAYPOINT) && v->current_order.GetDestination() == station_id && v->current_order.GetWaypointFlags().Test(OrderWaypointFlag::Reverse)) {
+		if (v->VCCurrentOrder().IsType(OT_GOTO_WAYPOINT) && v->VCCurrentOrder().GetDestination() == station_id && v->VCCurrentOrder().GetWaypointFlags().Test(OrderWaypointFlag::Reverse)) {
 			Train *t = Train::From(v);
 			// reverse at waypoint
 			if (t->reverse_distance == 0) {
 				t->reverse_distance = t->gcache.cached_total_length;
-				if (t->current_order.IsWaitTimetabled()) {
+				if (t->VCCurrentOrder().IsWaitTimetabled()) {
 					t->DeleteUnreachedImplicitOrders();
 					UpdateVehicleTimetable(t, true);
-					t->last_station_visited = station_id;
+					t->VCLastStationVisited() = station_id;
 					SetWindowDirty(WC_VEHICLE_VIEW, t->index);
-					t->current_order.MakeWaiting();
-					t->current_order.SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
+					t->VCCurrentOrder().MakeWaiting();
+					t->VCCurrentOrder().SetNonStopType(ONSF_NO_STOP_AT_ANY_STATION);
 					return {};
 				}
 			}
 		}
 		if (HasBit(Train::From(v)->flags, VRF_BEYOND_PLATFORM_END)) return {};
 		Train *front = Train::From(v)->First();
-		if (!front->IsFrontEngine()) return {};
+		if (!front->IsFrontUnit()) return {};
 		if (!(v == front || HasBit(Train::From(v)->Previous()->flags, VRF_BEYOND_PLATFORM_END))) return {};
 		if (!HasStationTileRail(tile)) return {};
-		if (!front->current_order.ShouldStopAtStation(front, station_id, IsRailWaypoint(tile))) return {};
+		if (!front->VCCurrentOrder().ShouldStopAtStation(front, station_id, IsRailWaypoint(tile))) return {};
 
 		int station_ahead;
 		int station_length;
@@ -4102,7 +4102,7 @@ static VehicleEnterTileStates VehicleEnter_Station(Vehicle *v, TileIndex tile, i
 	} else if (v->type == VEH_ROAD) {
 		RoadVehicle *rv = RoadVehicle::From(v);
 		if (rv->state < RVSB_IN_ROAD_STOP && !IsReversingRoadTrackdir((Trackdir)rv->state) && rv->frame == 0) {
-			if (IsStationRoadStop(tile) && rv->IsFrontEngine()) {
+			if (IsStationRoadStop(tile) && rv->IsFrontUnit()) {
 				/* Attempt to allocate a parking bay in a road stop */
 				if (RoadStop::GetByTile(tile, GetRoadStopType(tile))->Enter(rv)) return {};
 				return VehicleEnterTileState::CannotEnter;

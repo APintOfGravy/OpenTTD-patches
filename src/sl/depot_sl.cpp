@@ -10,6 +10,7 @@
 #include "../stdafx.h"
 #include "../depot_base.h"
 #include "../town.h"
+#include "../consist.h"
 
 #include "saveload.h"
 

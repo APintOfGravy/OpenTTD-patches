@@ -39,6 +39,7 @@
 #include "../table/townname.h"
 
 #include "../safeguards.h"
+#include "vehicle_sl.h"
 
 static bool _read_ttdpatch_flags;    ///< Have we (tried to) read TTDPatch extra flags?
 static uint16_t _old_extra_chunk_nums; ///< Number of extra TTDPatch chunks
@@ -177,7 +178,7 @@ void FixOldVehicles(LoadgameState &ls)
 		/* Vehicle-subtype is different in TTD(Patch) */
 		if (v->type == VEH_EFFECT) v->subtype = v->subtype >> 1;
 
-		v->name = CopyFromOldName(ls.vehicle_names[v->index.base()]);
+		v->VCName() = CopyFromOldName(ls.vehicle_names[v->index.base()]);
 
 		/* We haven't used this bit for stations for ages */
 		if (v->type == VEH_ROAD) {
@@ -199,8 +200,8 @@ void FixOldVehicles(LoadgameState &ls)
 		 * (loading) order which causes assertions and the like later on.
 		 */
 		if (!IsCompanyBuildableVehicleType(v) ||
-				(v->IsPrimaryVehicle() && v->current_order.IsType(OT_NOTHING))) {
-			v->current_order.MakeDummy();
+				(v->IsPrimaryVehicle() && v->VCCurrentOrder().IsType(OT_NOTHING))) {
+			v->VCCurrentOrder().MakeDummy();
 		}
 
 		/* Shared orders are fixed in AfterLoadVehicles now */
@@ -1163,6 +1164,7 @@ static bool LoadOldVehicleUnion(LoadgameState &ls, int)
 }
 
 static uint16_t _cargo_count;
+static LegacyVSLProps _cur_vsl_props = {};
 
 static const OldChunks vehicle_chunk[] = {
 	OCL_SVAR(  OC_UINT8, Vehicle, subtype ),
@@ -1174,12 +1176,12 @@ static const OldChunks vehicle_chunk[] = {
 	OCL_VAR ( OC_UINT16,   1, &_old_order ),
 
 	OCL_NULL ( 1 ), ///< num_orders, now calculated
-	OCL_SVAR( OC_FILE_U8 | OC_VAR_U16, Vehicle, cur_implicit_order_index ),
+	OCL_VAR( OC_FILE_U8 | OC_VAR_U16, 1, &_cur_vsl_props.cur_implicit_order_index ),
 	OCL_SVAR(   OC_TILE, Vehicle, dest_tile ),
 	OCL_SVAR( OC_UINT16, Vehicle, load_unload_ticks ),
 	OCL_SVAR( OC_FILE_U16 | OC_VAR_U32, Vehicle, date_of_last_service ),
-	OCL_SVAR( OC_UINT16, Vehicle, service_interval ),
-	OCL_SVAR( OC_FILE_U8 | OC_VAR_U16, Vehicle, last_station_visited ),
+	OCL_VAR( OC_UINT16, 1, &_cur_vsl_props.service_interval ),
+	OCL_VAR( OC_FILE_U8 | OC_VAR_U16, 1, &_cur_vsl_props.last_station_visited ),
 	OCL_SVAR( OC_TTD | OC_UINT8, Vehicle, tick_counter ),
 	OCL_CNULL( OC_TTD, 2 ), ///< max_speed, now it is calculated.
 	OCL_CNULL( OC_TTO, 1 ), ///< max_speed, now it is calculated.
@@ -1218,7 +1220,7 @@ static const OldChunks vehicle_chunk[] = {
 	OCL_SVAR( OC_FILE_U16 | OC_VAR_U32, Vehicle, age ),
 	OCL_SVAR( OC_FILE_U16 | OC_VAR_U32, Vehicle, max_age ),
 	OCL_SVAR( OC_FILE_U8 | OC_VAR_I32, Vehicle, build_year ),
-	OCL_SVAR( OC_FILE_U8 | OC_VAR_U16, Vehicle, unitnumber ),
+	OCL_VAR( OC_FILE_U8 | OC_VAR_U16, 1, &_cur_vsl_props.unitnumber ),
 
 	OCL_SVAR( OC_TTD | OC_UINT16, Vehicle, engine_type ),
 	OCL_SVAR( OC_TTO | OC_FILE_U8 | OC_VAR_U16, Vehicle, engine_type ),
@@ -1264,8 +1266,12 @@ bool LoadOldVehicle(LoadgameState &ls, int num)
 	/* Read the TTDPatch flags, because we need some info from it */
 	ReadTTDPatchFlags(ls);
 
+	_legacy_vsl_props = {};
+
 	for (uint i = 0; i < ls.vehicle_multiplier; i++) {
 		_current_vehicle_id = num * ls.vehicle_multiplier + i;
+
+		_cur_vsl_props = {};
 
 		Vehicle *v;
 
@@ -1286,7 +1292,7 @@ bool LoadOldVehicle(LoadgameState &ls, int num)
 			if (!LoadChunk(ls, v, vehicle_chunk)) return false;
 			if (v == nullptr) continue;
 			v->refit_cap = v->cargo_cap;
-			if (v->cur_implicit_order_index == 0xFF) v->cur_implicit_order_index = INVALID_VEH_ORDER_ID;
+			if (v->VCCurImplicitOrderIndex() == 0xFF) v->VCCurImplicitOrderIndex() = INVALID_VEH_ORDER_ID;
 
 			SpriteID sprite = v->sprite_seq.seq[0].sprite;
 			/* no need to override other sprites */
@@ -1363,7 +1369,7 @@ bool LoadOldVehicle(LoadgameState &ls, int num)
 
 			if (!LoadChunk(ls, v, vehicle_chunk)) return false;
 			if (v == nullptr) continue;
-			if (v->cur_implicit_order_index == 0xFF) v->cur_implicit_order_index = INVALID_VEH_ORDER_ID;
+			if (v->VCCurImplicitOrderIndex() == 0xFF) v->VCCurImplicitOrderIndex() = INVALID_VEH_ORDER_ID;
 
 			ls.vehicle_names[_current_vehicle_id] = RemapOldStringID(_old_string_id);
 
@@ -1383,7 +1389,7 @@ bool LoadOldVehicle(LoadgameState &ls, int num)
 				RegisterVehicleOldOrderRef(v->index, OrderID(old_id));
 			}
 		}
-		v->current_order.AssignOrder(UnpackOldOrder(_old_order));
+		v->VCCurrentOrder().AssignOrder(UnpackOldOrder(_old_order));
 
 		if (v->type == VEH_DISASTER) {
 			DisasterVehicle::From(v)->state = UnpackOldOrder(_old_order).GetDestination().value;
@@ -1396,6 +1402,8 @@ bool LoadOldVehicle(LoadgameState &ls, int num)
 			TileIndex source_xy = (source != StationID::Invalid()) ? Station::Get(source)->xy : (TileIndex)0;
 			v->cargo.Append(new CargoPacket(_cargo_count, _cargo_periods, source, source_xy, 0));
 		}
+
+		_legacy_vsl_props[v->index] = _cur_vsl_props;
 	}
 
 	return true;

@@ -76,6 +76,8 @@ struct BaseConsist {
 	virtual ~BaseConsist() = default;
 
 	void CopyConsistPropertiesFrom(const BaseConsist *src);
+
+	void CopyConsistPropertiesFrom(const Vehicle *src);
 };
 
 #endif /* BASE_CONSIST_H */

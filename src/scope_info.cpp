@@ -66,13 +66,13 @@ void GeneralFmtDumper<Vehicle, const Vehicle *>::fmt_format_value(format_target 
 				"Aircraft",
 			};
 			buf.append(veh_type[u->type]);
-			if (u->unitnumber > 0) {
-				buf.format(" {}", u->unitnumber);
+			if (u->VCUnitNumber() > 0) {
+				buf.format(" {}", u->VCUnitNumber());
 			} else {
 				buf.append(" [N/A]");
 			}
-			if (!u->name.empty()) {
-				buf.format(" ({})", u->name.c_str());
+			if (!u->VCName().empty()) {
+				buf.format(" ({})", u->VCName().c_str());
 			}
 		} else if (u->type == VEH_EFFECT) {
 			buf.format("Effect Vehicle: subtype: {}", u->subtype);

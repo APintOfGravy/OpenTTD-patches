@@ -672,7 +672,7 @@ static inline bool ValParamTrackOrientation(Track track)
 
 static void ReReserveTrainPath(Train *v)
 {
-	const bool consider_stopped = (v->vehstatus.Test(VehState::Stopped) && v->cur_speed == 0) || v->current_order.IsAnyLoadingType();
+	const bool consider_stopped = (v->vehstatus.Test(VehState::Stopped) && v->cur_speed == 0) || v->VCCurrentOrder().IsAnyLoadingType();
 	const bool at_safe_waiting_position = IsSafeWaitingPosition(v, v->tile, v->GetVehicleTrackdir(), true, _settings_game.pf.forbid_90_deg);
 
 	/* Don't extend the train's path if it's stopped or loading, and at a safe position. */
@@ -4676,15 +4676,15 @@ static VehicleEnterTileStates VehicleEnter_Track(Vehicle *u, TileIndex tile, int
 
 	auto abort_load_through = [&](bool leave_station) {
 		if (_local_company == v->owner) {
-			EncodedString msg = GetEncodedString(STR_VEHICLE_LOAD_THROUGH_ABORTED_DEPOT, v->index, v->current_order.GetDestination().ToStationID());
+			EncodedString msg = GetEncodedString(STR_VEHICLE_LOAD_THROUGH_ABORTED_DEPOT, v->index, v->VCCurrentOrder().GetDestination().ToStationID());
 			AddNewsItem(std::move(msg), NewsType::Advice, NewsStyle::Small, {NewsFlag::InColour, NewsFlag::VehicleParam0},
-					v->index, v->current_order.GetDestination().ToStationID());
+					v->index, v->VCCurrentOrder().GetDestination().ToStationID());
 		}
 		if (leave_station) {
 			v->LeaveStation();
 			/* Only advance to next order if we are loading at the current one */
-			const Order *order = v->GetOrder(v->cur_implicit_order_index);
-			if (order != nullptr && order->IsType(OT_GOTO_STATION) && order->GetDestination() == v->last_station_visited) {
+			const Order *order = v->GetOrder(v->VCCurImplicitOrderIndex());
+			if (order != nullptr && order->IsType(OT_GOTO_STATION) && order->GetDestination() == v->VCLastStationVisited()) {
 				v->IncrementImplicitOrderIndex();
 			}
 		} else {
@@ -4694,7 +4694,7 @@ static VehicleEnterTileStates VehicleEnter_Track(Vehicle *u, TileIndex tile, int
 		}
 	};
 
-	if (v->IsFrontEngine() && v->current_order.IsType(OT_LOADING_ADVANCE)) abort_load_through(true);
+	if (v->IsFrontUnit() && v->VCCurrentOrder().IsType(OT_LOADING_ADVANCE)) abort_load_through(true);
 
 	/* Depot direction. */
 	DiagDirection dir = GetRailDepotDirection(tile);
@@ -4717,8 +4717,8 @@ static VehicleEnterTileStates VehicleEnter_Track(Vehicle *u, TileIndex tile, int
 		if (DiagDirToDir(ReverseDiagDir(dir)) == v->direction) {
 			/* enter the depot */
 
-			if (v->IsFrontEngine()) {
-				if (v->current_order.IsType(OT_LOADING_ADVANCE)) {
+			if (v->IsFrontUnit()) {
+				if (v->VCCurrentOrder().IsType(OT_LOADING_ADVANCE)) {
 					abort_load_through(true);
 				} else if (HasBit(v->flags, VRF_BEYOND_PLATFORM_END)) {
 					abort_load_through(false);

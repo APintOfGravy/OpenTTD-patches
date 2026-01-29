@@ -13,6 +13,7 @@
 #include "gfx_type.h"
 #include "direction_type.h"
 #include "command_type.h"
+#include "consist_type.h"
 #include "vehicle_type.h"
 #include "engine_type.h"
 #include "transport_type.h"
@@ -203,6 +204,7 @@ typedef std::vector<VehicleID> VehicleSet;
 void GetVehicleSet(VehicleSet &set, Vehicle *v, uint8_t num_vehicles);
 
 void CheckCargoCapacity(Vehicle *v);
+void CheckCargoCapacity(Consist* c);
 
 bool VehiclesHaveSameEngineList(const Vehicle *v1, const Vehicle *v2);
 bool VehiclesHaveSameOrderList(const Vehicle *v1, const Vehicle *v2);

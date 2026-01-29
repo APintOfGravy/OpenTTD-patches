@@ -23,7 +23,7 @@ DECLARE_ENUM_AS_BIT_SET(MoveRailVehicleFlags)
 
 DEF_CMD_TUPLE_LT (CMD_MOVE_RAIL_VEHICLE,           CmdMoveRailVehicle,           {}, CMDT_VEHICLE_CONSTRUCTION, CmdDataT<VehicleID, VehicleID, MoveRailVehicleFlags>)
 DEF_CMD_TUPLE_LT (CMD_FORCE_TRAIN_PROCEED,         CmdForceTrainProceed,         {}, CMDT_VEHICLE_MANAGEMENT,   CmdDataT<VehicleID>)
-DEF_CMD_TUPLE_LT (CMD_REVERSE_TRAIN_DIRECTION,     CmdReverseTrainDirection,     {}, CMDT_VEHICLE_MANAGEMENT,   CmdDataT<VehicleID, bool>)
+DEF_CMD_TUPLE_LT (CMD_REVERSE_TRAIN_DIRECTION,     CmdFlipTrainDirection,     {}, CMDT_VEHICLE_MANAGEMENT,   CmdDataT<VehicleID, bool>)
 DEF_CMD_TUPLE_LT (CMD_SET_TRAIN_SPEED_RESTRICTION, CmdSetTrainSpeedRestriction,  {}, CMDT_VEHICLE_MANAGEMENT,   CmdDataT<VehicleID, uint16_t>)
 
 #endif /* TRAIN_CMD_H */

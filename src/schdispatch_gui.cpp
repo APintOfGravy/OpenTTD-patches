@@ -91,9 +91,9 @@ static void SetScheduleStartDateCallback(const Window *w, StateTicks date, void 
 static void ScheduleAddIntl(VehicleID veh, uint schedule_index, StateTicks date, uint extra_slots, uint offset, uint16_t slot_flags, DispatchSlotRouteID route_id, bool wrap_mode = false)
 {
 	Vehicle *v = Vehicle::GetIfValid(veh);
-	if (v == nullptr || !v->IsPrimaryVehicle() || schedule_index >= v->orders->GetScheduledDispatchScheduleCount()) return;
+	if (v == nullptr || !v->IsPrimaryVehicle() || schedule_index >= v->VCOrders()->GetScheduledDispatchScheduleCount()) return;
 
-	const DispatchSchedule &ds = v->orders->GetDispatchScheduleByIndex(schedule_index);
+	const DispatchSchedule &ds = v->VCOrders()->GetDispatchScheduleByIndex(schedule_index);
 
 	/* Make sure the time is the closest future to the timetable start */
 	StateTicks start_tick = ds.GetScheduledDispatchStartTick();
@@ -283,14 +283,14 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 
 	bool IsScheduleSelected() const
 	{
-		return this->vehicle->orders != nullptr && this->schedule_index >= 0 && (uint)this->schedule_index < this->vehicle->orders->GetScheduledDispatchScheduleCount();
+		return this->vehicle->VCOrders() != nullptr && this->schedule_index >= 0 && (uint)this->schedule_index < this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount();
 	}
 
 	void AutoSelectSchedule()
 	{
 		if (!this->IsScheduleSelected()) {
-			if (this->vehicle->orders != nullptr && this->vehicle->orders->GetScheduledDispatchScheduleCount() > 0) {
-				this->schedule_index = Clamp<int>(this->schedule_index, 0, this->vehicle->orders->GetScheduledDispatchScheduleCount() - 1);
+			if (this->vehicle->VCOrders() != nullptr && this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() > 0) {
+				this->schedule_index = Clamp<int>(this->schedule_index, 0, this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() - 1);
 			} else {
 				this->schedule_index = -1;
 			}
@@ -300,7 +300,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 
 	const DispatchSchedule &GetSelectedSchedule() const
 	{
-		return this->vehicle->orders->GetDispatchScheduleByIndex(this->schedule_index);
+		return this->vehicle->VCOrders()->GetDispatchScheduleByIndex(this->schedule_index);
 	}
 
 	template <typename F>
@@ -405,18 +405,18 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 	{
 		const Vehicle *v = this->vehicle;
 
-		const bool unviewable = (v->orders == nullptr) || !this->TimeUnitsUsable();
-		const bool uneditable = (v->orders == nullptr) || (v->owner != _local_company);
+		const bool unviewable = (v->VCOrders() == nullptr) || !this->TimeUnitsUsable();
+		const bool uneditable = (v->VCOrders() == nullptr) || (v->owner != _local_company);
 		const bool unusable = unviewable || uneditable;
 
 		this->SetWidgetDisabledState(WID_SCHDISPATCH_ENABLED, uneditable || (!v->vehicle_flags.Test(VehicleFlag::ScheduledDispatch) && (unviewable || v->vehicle_flags.Test(VehicleFlag::TimetableSeparation) || v->HasUnbunchingOrder())));
 
-		this->SetWidgetDisabledState(WID_SCHDISPATCH_RENAME, unusable || v->orders->GetScheduledDispatchScheduleCount() == 0);
+		this->SetWidgetDisabledState(WID_SCHDISPATCH_RENAME, unusable || v->VCOrders()->GetScheduledDispatchScheduleCount() == 0);
 		this->SetWidgetDisabledState(WID_SCHDISPATCH_PREV, unviewable || this->schedule_index <= 0);
-		this->SetWidgetDisabledState(WID_SCHDISPATCH_NEXT, unviewable || this->schedule_index >= (int)(v->orders->GetScheduledDispatchScheduleCount() - 1));
+		this->SetWidgetDisabledState(WID_SCHDISPATCH_NEXT, unviewable || this->schedule_index >= (int)(v->VCOrders()->GetScheduledDispatchScheduleCount() - 1));
 		this->SetWidgetDisabledState(WID_SCHDISPATCH_MOVE_LEFT, unviewable || this->schedule_index <= 0);
-		this->SetWidgetDisabledState(WID_SCHDISPATCH_MOVE_RIGHT, unviewable || this->schedule_index >= (int)(v->orders->GetScheduledDispatchScheduleCount() - 1));
-		this->SetWidgetDisabledState(WID_SCHDISPATCH_ADD_SCHEDULE, unusable || v->orders->GetScheduledDispatchScheduleCount() >= 4096);
+		this->SetWidgetDisabledState(WID_SCHDISPATCH_MOVE_RIGHT, unviewable || this->schedule_index >= (int)(v->VCOrders()->GetScheduledDispatchScheduleCount() - 1));
+		this->SetWidgetDisabledState(WID_SCHDISPATCH_ADD_SCHEDULE, unusable || v->VCOrders()->GetScheduledDispatchScheduleCount() >= 4096);
 
 		const bool disabled = unusable || !v->vehicle_flags.Test(VehicleFlag::ScheduledDispatch)  || !this->IsScheduleSelected();
 		const bool no_editable_slots = disabled || this->GetSelectedSchedule().GetScheduledDispatch().empty();
@@ -476,12 +476,12 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 					if (ds.ScheduleName().empty()) {
 						return GetString(STR_SCHDISPATCH_SCHEDULE_ID,
 								this->schedule_index + 1,
-								this->vehicle->orders->GetScheduledDispatchScheduleCount());
+								this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount());
 					} else {
 						return GetString(STR_SCHDISPATCH_NAMED_SCHEDULE_ID,
 								ds.ScheduleName(),
 								this->schedule_index + 1,
-								this->vehicle->orders->GetScheduledDispatchScheduleCount());
+								this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount());
 					}
 				} else {
 					return GetString(STR_SCHDISPATCH_NO_SCHEDULES);
@@ -590,8 +590,8 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 						have_extra = true;
 					};
 
-					auto record_iter = this->vehicle->dispatch_records.find(static_cast<uint16_t>(this->schedule_index));
-					if (record_iter != this->vehicle->dispatch_records.end()) {
+					auto record_iter = this->vehicle->VCDispatchRecords().find(static_cast<uint16_t>(this->schedule_index));
+					if (record_iter != this->vehicle->VCDispatchRecords().end()) {
 						const LastDispatchRecord &record = record_iter->second;
 						int32_t veh_dispatch = ((record.dispatched - start_tick) % ds.GetScheduledDispatchDuration()).base();
 						if (veh_dispatch < 0) veh_dispatch += ds.GetScheduledDispatchDuration();
@@ -724,8 +724,8 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 				}
 
 				int32_t veh_dispatch;
-				auto record_iter = v->dispatch_records.find(static_cast<uint16_t>(this->schedule_index));
-				if (record_iter != v->dispatch_records.end()) {
+				auto record_iter = v->VCDispatchRecords().find(static_cast<uint16_t>(this->schedule_index));
+				if (record_iter != v->VCDispatchRecords().end()) {
 					const LastDispatchRecord &record = record_iter->second;
 					veh_dispatch = ((record.dispatched - start_tick) % ds.GetScheduledDispatchDuration()).base();
 					if (veh_dispatch < 0) veh_dispatch += ds.GetScheduledDispatchDuration();
@@ -993,8 +993,8 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 						}
 					};
 
-					auto record_iter = v->dispatch_records.find(static_cast<uint16_t>(this->schedule_index));
-					if (record_iter != v->dispatch_records.end()) {
+					auto record_iter = v->VCDispatchRecords().find(static_cast<uint16_t>(this->schedule_index));
+					if (record_iter != v->VCDispatchRecords().end()) {
 						const LastDispatchRecord &record = record_iter->second;
 						format_buffer details;
 						auto add_detail = [&](StringID str) {
@@ -1063,7 +1063,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 					y += GetCharacterHeight(FS_NORMAL);
 
 					if (!ds.GetScheduledDispatchReuseSlots() && !have_conditional) {
-						const int required_vehicle = CalculateMaxRequiredVehicle(v->orders->GetTimetableTotalDuration(), ds.GetScheduledDispatchDuration(), ds.GetScheduledDispatch());
+						const int required_vehicle = CalculateMaxRequiredVehicle(v->VCOrders()->GetTimetableTotalDuration(), ds.GetScheduledDispatchDuration(), ds.GetScheduledDispatch());
 						if (required_vehicle > 0) {
 							DrawString(ir.left, ir.right, y, GetString(STR_SCHDISPATCH_SUMMARY_L1, required_vehicle));
 							extra_lines++;
@@ -1204,7 +1204,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 				bool enable = !v->vehicle_flags.Test(VehicleFlag::ScheduledDispatch);
 
 				Command<CMD_SCH_DISPATCH>::Post(STR_ERROR_CAN_T_TIMETABLE_VEHICLE, v->index, enable);
-				if (enable && this->vehicle->orders != nullptr && this->vehicle->orders->GetScheduledDispatchScheduleCount() == 0) {
+				if (enable && this->vehicle->VCOrders() != nullptr && this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() == 0) {
 					AddNewScheduledDispatchSchedule(v->index);
 				}
 				break;
@@ -1307,7 +1307,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 
 			case WID_SCHDISPATCH_NEXT:
 				if (!this->IsScheduleSelected()) break;
-				if (this->schedule_index < (int)(this->vehicle->orders->GetScheduledDispatchScheduleCount() - 1)) {
+				if (this->schedule_index < (int)(this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() - 1)) {
 					this->schedule_index++;
 					this->selected_slots.clear();
 				}
@@ -1422,7 +1422,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 
 			case WID_SCHDISPATCH_MOVE_RIGHT:
 				if (!this->IsScheduleSelected()) break;
-				if (this->schedule_index < (int)(this->vehicle->orders->GetScheduledDispatchScheduleCount() - 1)) {
+				if (this->schedule_index < (int)(this->vehicle->VCOrders()->GetScheduledDispatchScheduleCount() - 1)) {
 					Command<CMD_SCH_DISPATCH_SWAP_SCHEDULES>::Post(STR_ERROR_CAN_T_TIMETABLE_VEHICLE, CommandCallback::SwapSchDispatchSchedules, this->vehicle->index, this->schedule_index + 1, this->schedule_index);
 				}
 				break;
@@ -1640,7 +1640,7 @@ struct SchdispatchWindow : GeneralVehicleWindow {
 
 	bool OnVehicleSelect(const Vehicle *v) override
 	{
-		if (v->orders == nullptr || v->orders->GetScheduledDispatchScheduleCount() == 0) return false;
+		if (v->VCOrders() == nullptr || v->VCOrders()->GetScheduledDispatchScheduleCount() == 0) return false;
 
 		Command<CMD_SCH_DISPATCH_APPEND_VEH_SCHEDULE>::Post(STR_ERROR_CAN_T_TIMETABLE_VEHICLE, this->vehicle->index, v->index);
 		ResetObjectToPlace();

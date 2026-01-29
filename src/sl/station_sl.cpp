@@ -62,7 +62,7 @@ void MoveBuoysToWaypoints()
 		VehicleType vt = v->type;
 		if (vt != VEH_SHIP && vt != VEH_TRAIN) continue;
 
-		UpdateWaypointOrder(&v->current_order);
+		UpdateWaypointOrder(&v->VCCurrentOrder());
 	}
 
 	/* Now make the stations waypoints */

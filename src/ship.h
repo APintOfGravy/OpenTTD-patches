@@ -56,7 +56,7 @@ struct Ship final : public SpecializedVehicle<Ship, VEH_SHIP> {
 	int GetDisplayMaxSpeed() const override{ return this->vcache.cached_max_speed / 2; }
 	int GetEffectiveMaxSpeed() const;
 	int GetDisplayEffectiveMaxSpeed() const { return this->GetEffectiveMaxSpeed() / 2; }
-	int GetCurrentMaxSpeed() const override { return std::min<int>(this->GetEffectiveMaxSpeed(), this->current_order.GetMaxSpeed() * 2); }
+	int GetCurrentMaxSpeed() const override { return std::min<int>(this->GetEffectiveMaxSpeed(), this->VCCurrentOrder().GetMaxSpeed() * 2); }
 	Money GetRunningCost() const override;
 	bool IsInDepot() const override { return this->state == TRACK_BIT_DEPOT; }
 	bool Tick() override;
@@ -68,6 +68,8 @@ struct Ship final : public SpecializedVehicle<Ship, VEH_SHIP> {
 	ClosestDepot FindClosestDepot() override;
 	void UpdateCache();
 	void SetDestTile(TileIndex tile) override;
+
+	bool IsUnitPowered() const override { return this->IsPrimaryVehicle(); }
 };
 
 bool IsShipDestinationTile(TileIndex tile, StationID station);

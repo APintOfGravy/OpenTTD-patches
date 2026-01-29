@@ -115,10 +115,12 @@ namespace upstream_sl {
 struct Order {
 private:
 	friend NamedSaveLoadTable GetVehicleDescription(VehicleType vt);      ///< Saving and loading the current order of vehicles.
+	friend NamedSaveLoadTable GetConsistDescription();      ///< Saving and loading the current order of vehicles.
 	friend void Load_VEHS();                                              ///< Loading of ancient vehicles.
 	friend NamedSaveLoadTable GetOrderDescription();                      ///< Saving and loading of orders.
 	friend struct OrderExtraDataStructHandler;                            ///< Saving and loading of orders.
 	friend struct VehicleOrderExtraDataStructHandler;                     ///< Saving and loading of orders.
+	friend struct ConsistOrderExtraDataStructHandler;                     ///< Saving and loading of orders.
 	friend upstream_sl::SaveLoadTable upstream_sl::GetOrderDescription(); ///< Saving and loading of orders.
 	template <typename T>
 	friend class upstream_sl::SlOrders;

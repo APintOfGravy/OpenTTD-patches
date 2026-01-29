@@ -10,6 +10,7 @@
 #ifndef WINDOW_GUI_H
 #define WINDOW_GUI_H
 
+#include "vehicle_base.h"
 #include "vehicle_type.h"
 #include "viewport_type.h"
 #include "company_type.h"
@@ -311,7 +312,7 @@ enum TooltipCloseCondition : uint8_t {
 	TCC_EXIT_VIEWPORT,
 };
 
-typedef std::vector<const Vehicle *> VehicleList;
+typedef std::vector<const Vehicle*> VehicleList;
 
 /**
  * Data structure for an opened window

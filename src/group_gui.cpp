@@ -731,7 +731,7 @@ public:
 					auto [first, last] = this->vscroll->GetVisibleRangeIterators(this->vehgroups);
 					for (auto it = first; it != last; ++it) {
 						const Vehicle *v = it->GetSingleVehicle();
-						if (v->group_id != this->vli.ToGroupID()) {
+						if (v->VCGroupID() != this->vli.ToGroupID()) {
 							GfxFillRect(mr.Shrink(WidgetDimensions::scaled.bevel), GetColourGradient(COLOUR_GREY, SHADE_DARK), FILLRECT_CHECKER);
 						}
 						mr = mr.Translate(0, this->resize.step_height);
@@ -880,7 +880,7 @@ public:
 							 * It only makes sense to select a group if not using shared orders
 							 * since two vehicles sharing orders can be from different groups.
 							 */
-							this->SelectGroup(v->group_id);
+							this->SelectGroup(v->VCGroupID());
 						}
 
 						SetObjectToPlaceWnd(SPR_CURSOR_MOUSE, PAL_NONE, HT_DRAG, this);
@@ -1243,7 +1243,7 @@ public:
 
 		/* Do not highlight when dragging over the current group */
 		if (this->vehicle_sel != VehicleID::Invalid()) {
-			if (Vehicle::Get(vehicle_sel)->group_id == new_group_over) new_group_over = GroupID::Invalid();
+			if (Vehicle::Get(vehicle_sel)->VCGroupID() == new_group_over) new_group_over = GroupID::Invalid();
 		} else if (this->group_sel != GroupID::Invalid()) {
 			if (this->group_sel == new_group_over || Group::Get(this->group_sel)->parent == new_group_over) new_group_over = GroupID::Invalid();
 		}
@@ -1387,7 +1387,7 @@ void ShowCompanyGroup(CompanyID company, VehicleType vehicle_type, GroupID group
  */
 void ShowCompanyGroupForVehicle(const Vehicle *v)
 {
-	ShowCompanyGroupInternal<true>(v->owner, v->type, v->group_id);
+	ShowCompanyGroupInternal<true>(v->owner, v->type, v->VCGroupID());
 }
 
 /**

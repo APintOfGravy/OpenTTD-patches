@@ -63,3 +63,46 @@ void BaseConsist::CopyConsistPropertiesFrom(const BaseConsist *src)
 
 	this->dispatch_records = src->dispatch_records;
 }
+
+void BaseConsist::CopyConsistPropertiesFrom(const Vehicle *src)
+{
+	this->name = src->VCName();
+
+	this->current_order_time = src->VCCurrentOrderTime();
+	this->lateness_counter = src->VCLatenessCounter();
+	this->timetable_start = src->VCTimetableStart();
+
+	this->service_interval = src->VCServiceInterval();
+
+	this->cur_real_order_index = src->VCCurRealOrderIndex();
+	this->cur_implicit_order_index = src->VCCurImplicitOrderIndex();
+	this->cur_timetable_order_index = src->VCCurTimetableOrderIndex();
+
+	if (src->vehicle_flags.Test(VehicleFlag::TimetableStarted)) this->vehicle_flags.Set(VehicleFlag::TimetableStarted);
+	if (src->vehicle_flags.Test(VehicleFlag::AutofillTimetable)) this->vehicle_flags.Set(VehicleFlag::AutofillTimetable);
+	if (src->vehicle_flags.Test(VehicleFlag::AutofillPreserveWaitTime)) this->vehicle_flags.Set(VehicleFlag::AutofillPreserveWaitTime);
+	if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent) != this->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsPercent)) {
+		this->vehicle_flags.Flip(VehicleFlag::ServiceIntervalIsPercent);
+	}
+	if (src->vehicle_flags.Test(VehicleFlag::ServiceIntervalIsCustom)) this->vehicle_flags.Set(VehicleFlag::ServiceIntervalIsCustom);
+
+	if (src->vehicle_flags.Test(VehicleFlag::AutomateTimetable)) {
+		this->vehicle_flags.Set(VehicleFlag::AutomateTimetable);
+		this->vehicle_flags.Reset(VehicleFlag::AutofillTimetable);
+		this->vehicle_flags.Reset(VehicleFlag::AutofillPreserveWaitTime);
+	} else {
+		this->vehicle_flags.Reset(VehicleFlag::AutomateTimetable);
+	}
+	if (src->vehicle_flags.Test(VehicleFlag::TimetableSeparation)) {
+		this->vehicle_flags.Set(VehicleFlag::TimetableSeparation);
+	} else {
+		this->vehicle_flags.Reset(VehicleFlag::TimetableSeparation);
+	}
+	if (src->vehicle_flags.Test(VehicleFlag::ScheduledDispatch)) {
+		this->vehicle_flags.Set(VehicleFlag::ScheduledDispatch);
+	} else {
+		this->vehicle_flags.Reset(VehicleFlag::ScheduledDispatch);
+	}
+
+	this->dispatch_records = src->VCDispatchRecords();
+}

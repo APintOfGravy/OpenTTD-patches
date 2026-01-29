@@ -276,12 +276,12 @@ struct GroundVehicle : public SpecializedVehicle<T, Type> {
 	/**
 	 * Set front engine state.
 	 */
-	inline void SetFrontEngine() { SetBit(this->subtype, GVSF_FRONT); }
+	inline void SetFrontUnit() { SetBit(this->subtype, GVSF_FRONT); }
 
 	/**
 	 * Remove the front engine state.
 	 */
-	inline void ClearFrontEngine() { ClrBit(this->subtype, GVSF_FRONT); }
+	inline void ClearFrontUnit() { ClrBit(this->subtype, GVSF_FRONT); }
 
 	/**
 	 * Set a vehicle to be an articulated part.
@@ -347,7 +347,7 @@ struct GroundVehicle : public SpecializedVehicle<T, Type> {
 	 * Check if the vehicle is a free wagon (got no engine in front of it).
 	 * @return Returns true if the vehicle is a free wagon.
 	 */
-	inline bool IsFreeWagon() const { return HasBit(this->subtype, GVSF_FREE_WAGON); }
+	bool IsFreeWagon() const;
 
 	/**
 	 * Check if a vehicle is an engine (can be first in a consist).
@@ -383,7 +383,7 @@ struct GroundVehicle : public SpecializedVehicle<T, Type> {
 	 * Check if the vehicle is a front engine.
 	 * @return Returns true if the vehicle is a front engine.
 	 */
-	inline bool IsFrontEngine() const
+	inline bool IsFrontUnit() const
 	{
 		return HasBit(this->subtype, GVSF_FRONT);
 	}

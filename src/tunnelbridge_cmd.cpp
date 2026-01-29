@@ -3244,7 +3244,7 @@ static VehicleEnterTileStates VehicleEnter_TunnelBridge(Vehicle *v, TileIndex ti
 			Train *t = Train::From(v);
 
 			if (!(t->track & TRACK_BIT_WORMHOLE) && dir == vdir) {
-				if (t->IsFrontEngine() && frame == TUNNEL_SOUND_FRAME) {
+				if (t->IsFrontUnit() && frame == TUNNEL_SOUND_FRAME) {
 					if (!PlayVehicleSound(t, VSE_TUNNEL) && RailVehInfo(t->engine_type)->engclass == 0) {
 						SndPlayVehicleFx(SND_05_TRAIN_THROUGH_TUNNEL, v);
 					}

@@ -276,11 +276,11 @@ static uint8_t MapAircraftMovementAction(const Aircraft *v)
 
 		case TERM1:
 		case HELIPAD1:
-			return (v->current_order.IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD1 : AMA_TTDP_LANDING_TO_PAD1;
+			return (v->VCCurrentOrder().IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD1 : AMA_TTDP_LANDING_TO_PAD1;
 
 		case TERM2:
 		case HELIPAD2:
-			return (v->current_order.IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD2 : AMA_TTDP_LANDING_TO_PAD2;
+			return (v->VCCurrentOrder().IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD2 : AMA_TTDP_LANDING_TO_PAD2;
 
 		case TERM3:
 		case TERM4:
@@ -289,7 +289,7 @@ static uint8_t MapAircraftMovementAction(const Aircraft *v)
 		case TERM7:
 		case TERM8:
 		case HELIPAD3:
-			return (v->current_order.IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD3 : AMA_TTDP_LANDING_TO_PAD3;
+			return (v->VCCurrentOrder().IsType(OT_LOADING)) ? AMA_TTDP_ON_PAD3 : AMA_TTDP_LANDING_TO_PAD3;
 
 		case TAKEOFF:      // Moving to takeoff position
 		case STARTTAKEOFF: // Accelerating down runway
@@ -306,7 +306,7 @@ static uint8_t MapAircraftMovementAction(const Aircraft *v)
 		case HELILANDING:
 		case HELIENDLANDING:
 			/* @todo Need to check terminal we're landing to. Is it known yet? */
-			return (v->current_order.IsType(OT_GOTO_DEPOT)) ?
+			return (v->VCCurrentOrder().IsType(OT_GOTO_DEPOT)) ?
 				AMA_TTDP_LANDING_TO_HANGAR : AMA_TTDP_LANDING_TO_PAD1;
 
 		default:
@@ -418,7 +418,7 @@ static uint32_t PositionHelper(const Vehicle *v, bool consecutive)
 	uint8_t chain_before = 0;
 	uint8_t chain_after  = 0;
 
-	for (u = v->First(); u != v; u = u->Next()) {
+	for (u = v->First(); u != v && u->Next() != nullptr; u = u->Next()) {
 		chain_before++;
 		if (consecutive && u->engine_type != v->engine_type) chain_before = 0;
 	}
@@ -939,16 +939,16 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 		case 0x07: break; // not implemented
 		case 0x08: break; // not implemented
 		case 0x09: break; // not implemented
-		case 0x0A: return v->current_order.MapOldOrder();
-		case 0x0B: return v->current_order.GetDestination().value;
+		case 0x0A: return v->VCCurrentOrder().MapOldOrder();
+		case 0x0B: return v->VCCurrentOrder().GetDestination().value;
 		case 0x0C: return v->GetNumOrders();
-		case 0x0D: return v->cur_real_order_index;
+		case 0x0D: return v->VCCurRealOrderIndex();
 		case 0x0E: break; // not implemented
 		case 0x0F: break; // not implemented
 		case 0x10:
 		case 0x11: {
 			uint ticks;
-			if (v->current_order.IsType(OT_LOADING)) {
+			if (v->VCCurrentOrder().IsType(OT_LOADING)) {
 				ticks = v->load_unload_ticks;
 			} else {
 				switch (v->type) {
@@ -963,7 +963,7 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 		case 0x13: return GB(ClampTo<uint16_t>(v->date_of_last_service_newgrf - CalTime::DAYS_TILL_ORIGINAL_BASE_YEAR), 8, 8);
 		case 0x14: return v->GetServiceInterval();
 		case 0x15: return GB(v->GetServiceInterval(), 8, 8);
-		case 0x16: return v->last_station_visited.base();
+		case 0x16: return v->VCLastStationVisited().base();
 		case 0x17: return v->tick_counter;
 		case 0x18:
 		case 0x19: {
@@ -1022,7 +1022,7 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 		case 0x42: return ClampTo<uint16_t>(v->max_age);
 		case 0x43: return GB(ClampTo<uint16_t>(v->max_age), 8, 8);
 		case 0x44: return (Clamp(v->build_year, CalTime::ORIGINAL_BASE_YEAR, CalTime::ORIGINAL_MAX_YEAR) - CalTime::ORIGINAL_BASE_YEAR).base();
-		case 0x45: return v->unitnumber;
+		case 0x45: return v->VCUnitNumber();
 		case 0x46: return v->GetEngine()->grf_prop.local_id;
 		case 0x47: return GB(v->GetEngine()->grf_prop.local_id, 8, 8);
 		case 0x48:
@@ -1196,7 +1196,7 @@ static uint32_t VehicleGetVariable(Vehicle *v, const VehicleScopeResolver *objec
 		return nullptr;
 	}
 
-	const Order &order = v->First()->current_order;
+	const Order &order = v->First()->VCCurrentOrder();
 	bool not_loading = (order.GetUnloadType() & OUFB_NO_UNLOAD) && (order.GetLoadType() & OLFB_NO_LOAD);
 	bool in_motion = !order.IsType(OT_LOADING) || not_loading;
 

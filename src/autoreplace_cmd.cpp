@@ -7,8 +7,8 @@
 
 /** @file autoreplace_cmd.cpp Deals with autoreplace execution but not the setup */
 
-#include "stdafx.h"
 #include "company_func.h"
+#include "consist.h"
 #include "train.h"
 #include "command_func.h"
 #include "engine_func.h"
@@ -131,6 +131,13 @@ void CheckCargoCapacity(Vehicle *v)
 	}
 }
 
+void CheckCargoCapacity(Consist* c)
+{
+	if (c == nullptr) return;
+
+	CheckCargoCapacity(c->FirstVehicle());
+}
+
 /**
  * Transfer cargo from a single (articulated )old vehicle to the new vehicle chain
  * @param old_veh Old vehicle that will be sold
@@ -210,7 +217,7 @@ static int GetIncompatibleRefitOrderIdForAutoreplace(const Vehicle *v, EngineID 
 	const Order *o;
 	const Vehicle *u = (v->type == VEH_TRAIN) ? v->First() : v;
 
-	const OrderList *orders = u->orders;
+	const OrderList *orders = u->VCOrders();
 	if (orders == nullptr) return -1;
 	for (VehicleOrderID i = 0; i < orders->GetNumOrders(); i++) {
 		o = orders->GetOrderAt(i);
@@ -294,7 +301,7 @@ static CommandCost GetNewEngineType(const Vehicle *v, const Company *c, bool alw
 
 	if (!same_type_only) {
 		bool replace_when_old;
-		e = EngineReplacementForCompany(c, v->engine_type, v->group_id, &replace_when_old);
+		e = EngineReplacementForCompany(c, v->engine_type, v->VCGroupID(), &replace_when_old);
 		if (!always_replace && replace_when_old && !v->NeedsAutorenewing(c, false)) e = EngineID::Invalid();
 	}
 
@@ -588,7 +595,7 @@ CommandCost CopyHeadSpecificThings(Vehicle *old_head, Vehicle *new_head, DoComma
 	if (cost.Succeeded() && old_head != new_head) cost.AddCost(Command<CMD_CLONE_ORDER>::Do(DoCommandFlag::Execute, CO_SHARE, new_head->index, old_head->index));
 
 	/* Copy group membership */
-	if (cost.Succeeded() && old_head != new_head) cost.AddCost(Command<CMD_ADD_VEHICLE_GROUP>::Do(DoCommandFlag::Execute, old_head->group_id, new_head->index, false));
+	if (cost.Succeeded() && old_head != new_head) cost.AddCost(Command<CMD_ADD_VEHICLE_GROUP>::Do(DoCommandFlag::Execute, old_head->VCGroupID(), new_head->index, false));
 
 	/* Perform start/stop check whether the new vehicle suits newgrf restrictions etc. */
 	if (start_stop_check && cost.Succeeded()) {
@@ -932,8 +939,8 @@ CommandCost CmdAutoreplaceVehicle(DoCommandFlags flags, VehicleID veh_id, bool s
 	if (v->type == VEH_TRAIN) {
 		Train *t = Train::From(v);
 		if (t->IsArticulatedPart() || t->IsRearDualheaded()) return CMD_ERROR;
-		free_wagon = !t->IsFrontEngine();
-		if (free_wagon && t->First()->IsFrontEngine()) return CMD_ERROR;
+		free_wagon = !t->IsFrontUnit();
+		if (free_wagon && t->First()->IsFrontUnit()) return CMD_ERROR;
 	} else {
 		if (!v->IsPrimaryVehicle()) return CMD_ERROR;
 	}
@@ -942,7 +949,7 @@ CommandCost CmdAutoreplaceVehicle(DoCommandFlags flags, VehicleID veh_id, bool s
 	const Company *c = Company::Get(_current_company);
 	bool wagon_removal = c->settings.renew_keep_length;
 
-	const Group *g = Group::GetIfValid(v->group_id);
+	const Group *g = Group::GetIfValid(v->VCGroupID());
 	if (g != nullptr) wagon_removal = g->flags.Test(GroupFlag::ReplaceWagonRemoval);
 
 	/* Test whether any replacement is set, before issuing a whole lot of commands that would end in nothing changed */
@@ -1039,4 +1046,3 @@ CommandCost CmdSetAutoReplace(DoCommandFlags flags, GroupID id_g, EngineID old_e
 
 	return cost;
 }
-
